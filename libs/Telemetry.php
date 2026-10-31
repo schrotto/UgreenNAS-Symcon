@@ -17,6 +17,33 @@ final class UgosTelemetry
         return is_scalar($value) && !is_bool($value) ? mb_substr((string) $value, 0, 160) : '';
     }
 
+    /** Pool-used ist Volume-Zuweisung, nicht die Dateisystembelegung. */
+    public static function volumeUsage(mixed $volumes): array
+    {
+        if (!is_array($volumes) || $volumes === []) {
+            return ['total' => null, 'used' => null, 'percent' => null];
+        }
+        $total = 0.0;
+        $used = 0.0;
+        $seen = [];
+        foreach ($volumes as $volume) {
+            if (!is_array($volume)) {
+                return ['total' => null, 'used' => null, 'percent' => null];
+            }
+            $capacity = self::number($volume['total'] ?? null);
+            $occupied = self::number($volume['used'] ?? null);
+            $name = self::text($volume['name'] ?? '');
+            if ($capacity === null || $capacity <= 0 || $occupied === null || $occupied > $capacity
+                || ($name !== '' && isset($seen[$name]))) {
+                return ['total' => null, 'used' => null, 'percent' => null];
+            }
+            $seen[$name] = true;
+            $total += $capacity;
+            $used += $occupied;
+        }
+        return ['total' => $total, 'used' => $used, 'percent' => 100 * $used / $total];
+    }
+
     public static function normalize(array $machine, array $stats, ?array $pools, ?array $disks): array
     {
         $overview = $stats['overview'] ?? $stats;
@@ -45,11 +72,9 @@ final class UgosTelemetry
             }
             $id = 'Pool_' . substr(hash('sha256', (string) $pool['name']), 0, 16);
             $name = self::text($pool['label'] ?? '') ?: self::text($pool['name']);
-            $total = self::number($pool['total'] ?? null);
-            $used = self::number($pool['used'] ?? null);
-            $percent = $total !== null && $total > 0 && $used !== null && $used <= $total ? 100 * $used / $total : null;
+            ['total' => $total, 'used' => $used, 'percent' => $percent] = self::volumeUsage($pool['volumes'] ?? null);
             $status = self::text($pool['status'] ?? null);
-            $add($id . '_Used', $name . ' – Belegung', 2, '%', $percent, 'pool');
+            $add($id . '_Used', $name . ' – Volume-Belegung', 2, '%', $percent, 'pool');
             $add($id . '_Status', $name . ' – UGOS-Status', 3, '', $status === '' ? null : $status, 'pool');
             $poolCards[] = ['id' => $id, 'name' => $name, 'total' => $total, 'used' => $used,
                 'percent' => $percent, 'status' => $status, 'raid' => self::text($pool['level'] ?? '')];

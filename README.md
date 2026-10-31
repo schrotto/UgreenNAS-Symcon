@@ -1,16 +1,16 @@
 # UGREEN NAS Monitoring für IP-Symcon
 
-Version **0.1, Build 1 – erste Testversion**, Stand 31.10.2026.
+Version **0.2, Build 2 – Testversion**, Stand 31.10.2026.
 
 Lokales Monitoring für UGREEN-NAS-Geräte mit UGOS Pro über deren Webschnittstelle. Es sind keine SSH-Verbindung, kein Docker-Container und kein Agent auf der NAS erforderlich. Die Bibliothek ist für IP-Symcon **ab 8.1** vorbereitet und verwendet `IPSModuleStrict` und das native HTML-SDK. Die tatsächlich eingesetzte Symcon-Version wurde noch nicht mitgeteilt.
 
-Referenzanforderung ist ein **DXP8800 Plus mit UGOS Pro 1.20.0.0142**. Weitere DXP-Modelle sollen über dieselben API-Endpunkte funktionieren. **Ein erfolgreicher Test auf dieser Firmware oder auf anderen DXP-Modellen liegt noch nicht vor.** Die UGOS-Schnittstelle ist nicht als stabile öffentliche Monitoring-API zugesichert. Firmwareänderungen können Anpassungen erfordern.
+Referenzanforderung ist ein **DXP8800 Plus mit UGOS Pro 1.20.0.0142**. Weitere DXP-Modelle sollen über dieselben API-Endpunkte funktionieren. Aus dem ersten Gerätetest über HTTP wurden eine erfolgreiche Anmeldung und korrekte CPU-, RAM-, Lüfter- und Festplattentemperaturwerte zurückgemeldet. HTTPS konnte beim Benutzer bisher nicht erfolgreich verwendet werden; die Ursache ist offen. Die Korrekturen für Variablenliste und Speicherbelegung aus Build 2 müssen am Gerät noch bestätigt werden. Andere DXP-Modelle wurden noch nicht geprüft. Die UGOS-Schnittstelle ist nicht als stabile öffentliche Monitoring-API zugesichert. Firmwareänderungen können Anpassungen erfordern.
 
 ## Funktionen
 
 - Verbindung, CPU- und RAM-Auslastung, CPU-Temperatur und Betriebszeit.
 - Dynamische Erkennung von CPU-/Gehäuselüftern und deren Drehzahlen.
-- Speicherpools mit Gesamtgröße, Belegung, RAID-Bezeichnung und unverändertem UGOS-Status.
+- Speicherpools mit tatsächlicher, nach Volume-Kapazität gewichteter Volume-Belegung, RAID-Bezeichnung und unverändertem UGOS-Status.
 - Laufwerke mit Modell, Größe und unverändertem UGOS-Status; Temperaturen nur bei sicherer Zuordnung über den Gerätenamen.
 - Lokale Warnhinweise bei hoher CPU-Auslastung, CPU-Temperatur oder Poolbelegung.
 - Responsive Dashboard-Kachel in hellem, dunklem oder automatischem Farbschema, mit wählbarer Akzentfarbe und ein-/ausblendbaren Bereichen.
@@ -36,11 +36,20 @@ Die Bibliothek besitzt die erforderliche Repository-Struktur. Für die Installat
 1. NAS-Adresse einschließlich Protokoll und API-Port eingeben, üblicherweise `https://NAS-IP:9443`. Benutzerdefinierte Ports können abweichen. Kein `/ugreen` und keinen weiteren Pfad anhängen. Die übliche unverschlüsselte Variante ist `http://NAS-IP:9999`.
 2. Einen **lokalen NAS-Benutzer** und dessen Passwort im Instanzformular eintragen. Ein UGREEN-Cloudkonto ist kein Ersatz für das lokale Konto. Das Konto benötigt Leserechte auf die abgefragten System- und Speicherinformationen. Welche Rechte auf der genannten Firmware ausreichen, muss am Gerät geprüft werden; nicht vorsorglich zusätzliche Rechte vergeben.
 3. HTTPS-Zertifikat prüfen lassen. Bei eigener CA die PEM-CA-Datei auf dem Symcon-System hinterlegen und deren absoluten Pfad angeben. Das Zertifikat muss zur eingegebenen Adresse passen. Bei selbstsigniertem Zertifikat ist eine bewusste Ausnahme über „HTTPS-Zertifikat prüfen“ möglich. HTTP verschlüsselt die Sitzung nicht.
-4. Überwachung aktivieren und **Übernehmen** anklicken. Danach **Verbindung testen / jetzt aktualisieren** ausführen.
-5. Formular schließen und neu öffnen: Erkannte Pools, Laufwerke und Lüfter erscheinen nun in der Variablenliste. Gewünschte Variablen einzeln aktivieren und erneut übernehmen. Ohne Auswahl bleibt es bei **null zusätzlichen Variablen**.
+4. Überwachung aktivieren und **Übernehmen** anklicken. Die erste Erkennung startet nach einer Sekunde; bei Bedarf **Verbindung testen / jetzt aktualisieren** ausführen.
+5. Erkannte Pools, Laufwerke und Lüfter erscheinen automatisch in der bereits geöffneten Variablenliste. Vor einer erfolgreichen Geräteverbindung sind nur die fünf allgemeinen Messwerte bekannt; es werden keine erfundenen Laufwerksplätze angezeigt. Gewünschte Variablen einzeln aktivieren und erneut übernehmen. Ohne Auswahl bleibt es bei **null zusätzlichen Variablen**.
 6. Instanz als Kachel in die Symcon-Kachelvisualisierung aufnehmen. Keine HTML-Box anlegen. Nach einem Modulupdate die geöffnete Visualisierung neu laden, damit Änderungen am HTML/CSS/JavaScript wirksam werden.
 
 Anmeldung mit RSA-Passwortverschlüsselung, Sitzungstoken und Cookies erfolgt automatisch. Die notwendige Freigabe eines neuen Clients bei **Zwei-Faktor-Anmeldung wird noch nicht unterstützt**. Ein solches Konto liefert eine Diagnose; die Zwei-Faktor-Prüfung wird nicht umgangen. Für produktive Nutzung mit diesem Konto muss der Freigabeablauf zunächst ergänzt werden.
+
+## Änderungen in Build 2
+
+- Geräteerkennung direkt nach dem Übernehmen, ohne das volle Aktualisierungsintervall abzuwarten.
+- Offene Variablenliste wird nach Erkennung automatisch ergänzt; noch nicht übernommene Auswahl und Namen bleiben erhalten. Einmal erkannte Messwerte bleiben auch bei kurzzeitigen optionalen Datenlücken auswählbar.
+- Poolbelegung verwendet `sum(volumes.used) / sum(volumes.total)`. Pool-`used` bezeichnet zugewiesenen Speicher und wird nicht mehr als Dateisystembelegung interpretiert. Fehlende oder unvollständige Volume-Werte werden als nicht verfügbar angezeigt.
+- Vorhandene GUIDs, Variablen-Idents und Benutzereinstellungen bleiben erhalten.
+
+Für ein lokales Update den Inhalt des bestehenden Bibliotheksordners durch Build 2 ersetzen und den Symcon-Dienst neu starten. Keine neue Instanz anlegen und alte Variablen nicht löschen. Anschließend einmal übernehmen und die Visualisierung neu laden. Alte entpackte Releases nicht als zusätzliche Unterordner an der Bibliothekswurzel ablegen. Die alte entpackte Arbeitskopie wurde unverändert unter `.releases` aufbewahrt.
 
 ## Variablen und Lizenzverbrauch
 
@@ -52,7 +61,7 @@ Anmeldung mit RSA-Passwortverschlüsselung, Sitzungstoken und Cookies erfolgt au
 | CPU-Temperatur | Float | °C | aus |
 | Betriebszeit | Integer | s | aus |
 | Je Lüfter: Drehzahl | Integer | rpm | aus |
-| Je Pool: Belegung | Float | % | aus |
+| Je Pool: Volume-Belegung | Float | % | aus |
 | Je Pool: UGOS-Status | String | Rohstatus | aus |
 | Je Laufwerk: Temperatur | Float | °C | aus |
 | Je Laufwerk: UGOS-Status | String | Rohstatus | aus |
@@ -69,7 +78,7 @@ Fehlende Messwerte überschreiben bestehende Werte nicht mit `0`. Für Automatio
 
 ## Visualisierung
 
-CPU, RAM und CPU-Temperatur bilden die Hauptanzeige. Darunter folgen Speicherpools mit Belegungsbalken, Laufwerke und Kühlung. Warnschwellen bleiben sichtbar. Diagnose ist aufklappbar und bleibt bei Updates geöffnet. Lange Namen werden umgebrochen. Kleine Kacheln verwenden eine vertikale Anordnung und vertikales Scrollen. Die Kachel steuert keinen Vollbildmodus der Host-App.
+CPU, RAM und CPU-Temperatur bilden die Hauptanzeige. Darunter folgen Speicherpools mit Volume-Belegungsbalken, Laufwerke und Kühlung. Warnschwellen bleiben sichtbar. Diagnose ist aufklappbar und bleibt bei Updates geöffnet. Lange Namen werden umgebrochen. Kleine Kacheln verwenden eine vertikale Anordnung und vertikales Scrollen. Die Kachel steuert keinen Vollbildmodus der Host-App.
 
 Konfigurierbar sind Anzeigename, Farbschema, Akzentfarbe, kompakte Abstände, Pools, Laufwerke, Lüfter und die Aktualisieren-Schaltfläche. Das Hauptdashboard bleibt sichtbar. Keine externen Schriften, Bilder, Bibliotheken oder Cloud-Dienste werden geladen.
 

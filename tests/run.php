@@ -33,6 +33,16 @@ $disks['result'] = array_reverse($disks['result']);
 $s2 = UgosTelemetry::normalize($f['machine'], $f['stats'], $f['pools'], $disks);
 check($s['disks'][0]['id'] === $s2['disks'][1]['id'], 'Laufwerk-Ident bleibt bei Sortierwechsel stabil');
 check(abs($s['pools'][0]['percent'] - 39.5833333) < .0001, 'Pool-Belegung berechnet');
+check($f['pools']['result'][0]['used'] === $f['pools']['result'][0]['total'] && $s['pools'][0]['percent'] < 40, '100 Prozent Pool-Zuweisung werden nicht als volle Volumes ausgegeben');
+$usage = UgosTelemetry::volumeUsage([['name' => 'a', 'total' => 100, 'used' => 90], ['name' => 'b', 'total' => 900, 'used' => 90]]);
+check($usage['percent'] === 18.0, 'Mehrere Volumes werden nach Kapazität gewichtet statt Prozentwerte zu mitteln');
+foreach ([null, [], [['total' => 100]], [['total' => 100, 'used' => 101]], [['total' => 0, 'used' => 0]], [['total' => 100, 'used' => 20], ['total' => 100]]] as $volumes) {
+    check(UgosTelemetry::volumeUsage($volumes)['percent'] === null, 'Fehlende oder teilweise ungültige Volume-Daten ergeben keine scheinbar gültige Belegung');
+}
+check(UgosTelemetry::volumeUsage([['total' => 100, 'used' => 0]])['percent'] === 0.0, 'Tatsächlich leeres Volume zeigt null Prozent');
+$noVolumes = $f['pools'];
+unset($noVolumes['result'][0]['volumes']);
+check(UgosTelemetry::normalize($f['machine'], $f['stats'], $noVolumes, $f['disks'])['pools'][0]['percent'] === null, 'Ohne Volume-Daten kein Rückfall auf Pool-Zuweisung');
 check(!str_contains(json_encode($s), 'fixture-a'), 'Seriennummer wird nicht an Kachel übertragen');
 foreach ([-999, 101, 'oops', true, null] as $bad) {
     check(UgosTelemetry::number($bad, 0, 100) === null, 'Ungültiger Prozentwert bleibt nicht verfügbar');

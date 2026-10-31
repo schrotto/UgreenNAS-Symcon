@@ -20,6 +20,7 @@ const path=require('path');
    if(width===320&&theme==='dark')await page.screenshot({path:path.join(__dirname,'../docs/preview-mobile.png'),fullPage:true});
   }
  }
+ check((await page.locator('#pools').textContent()).includes('Volumes belegt'), 'Belegung als tatsächliche Volume-Belegung beschriftet');
  let p=structuredClone(original);p.options.title='<img src=x onerror=alert(1)>';p.data.disks[0].name='SehrLangerLaufwerksname'.repeat(8);await feed(p);
  check(await page.locator('h1 img').count()===0,'Dynamische Texte werden nicht als HTML ausgeführt');
  check(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Lange Namen bleiben im Layout');

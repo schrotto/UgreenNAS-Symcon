@@ -27,3 +27,7 @@ HTML-SDK seit 7.1; Bibliothek setzt wegen des gewählten Gesamtstands 8.1 voraus
 - [UGOS-Client: Core-API](https://github.com/metaneutrons/ugos-cli/blob/main/docs/api-system.md): Machine-Info, Monitoring, Modell-/Hardwarevarianten. Im Quellprojekt auf einer anderen Firmware geprüft; das ist kein Nachweis für 1.20.0.0142.
 
 Der Schluss, dass weitere DXP-Modelle mit gleichem UGOS-API-Format angebunden werden können, ist eine technische Annahme. Er wird nicht als geprüfte Kompatibilität für alle DXP-Geräte dargestellt. Nicht eindeutig belegte Einheiten von I/O-Werten werden in dieser Version nicht ausgewertet. Nicht zuordenbare Laufwerkstemperaturen bleiben nicht verfügbar.
+
+## Ergänzung Build 2
+
+[UGREEN Storage Pool](https://support.ugnas.com/detail/article/en-US/305) beschreibt die Zuweisung von Poolkapazität an Speicherbereiche. Die beobachteten `volumes[].total`- und `volumes[].used`-Felder sind im oben genannten Home-Assistant-Client dokumentiert. Der [UGOS-Dashboard-Client](https://github.com/runlevel1977-del/UgreenNASAdmin/blob/main/ugreen_app/ugos_api_dashboard.py) unterscheidet ebenfalls Poolzuweisung und Volume-Belegung. Die korrigierte Anzeige aggregiert ausschließlich vollständige Volume-Werte.

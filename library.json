@@ -3,8 +3,10 @@
   "author": "UgreenNAS Projekt",
   "name": "UGREEN NAS Monitoring",
   "url": "https://support.ugnas.com/",
-  "compatibility": {"version": "8.1"},
-  "version": "0.1",
-  "build": 1,
+  "compatibility": {
+    "version": "8.1"
+  },
+  "version": "0.2",
+  "build": 2,
   "date": 1793444400
 }

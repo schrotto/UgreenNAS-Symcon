@@ -1,62 +1,291 @@
 {
   "elements": [
-    {"type":"ExpansionPanel","caption":"Allgemein und NAS-Verbindung","expanded":true,"items":[
-      {"type":"CheckBox","name":"Enabled","caption":"Überwachung aktivieren"},
-      {"type":"ValidationTextBox","name":"BaseURL","caption":"NAS-Adresse, z. B. https://192.168.1.20:9443"},
-      {"type":"ValidationTextBox","name":"Username","caption":"Lokaler NAS-Benutzer"},
-      {"type":"PasswordTextBox","name":"Password","caption":"NAS-Passwort"},
-      {"type":"NumberSpinner","name":"Interval","caption":"Aktualisierungsintervall (Sekunden)","minimum":15,"maximum":86400},
-      {"type":"Label","caption":"Nur Lesezugriffe über die lokale UGOS-Webschnittstelle. Keine Installation auf der NAS. Gerätefreigabe für Zwei-Faktor-Konten wird in dieser Version noch nicht unterstützt."}
-    ]},
-    {"type":"ExpansionPanel","caption":"Variablenverwaltung – lizenzsparend","items":[
-      {"type":"Label","caption":"Standard: keine Variablen. Die Kachel arbeitet unabhängig von der Auswahl."},
-      {"type":"List","name":"Variables","caption":"Optionale Messwertvariablen","rowCount":8,"add":false,"delete":false,"loadValuesFromConfiguration":false,"columns":[
-        {"caption":"Aktiv","name":"Enabled","width":"70px","edit":{"type":"CheckBox"}},
-        {"caption":"Ident","name":"Ident","width":"190px","save":true},
-        {"caption":"Name","name":"Name","width":"auto","edit":{"type":"ValidationTextBox"}},
-        {"caption":"Typ","name":"Type","width":"80px"},
-        {"caption":"Einheit","name":"Unit","width":"65px"},
-        {"caption":"Darstellung","name":"Representation","width":"130px"},
-        {"caption":"Position","name":"Position","width":"80px","edit":{"type":"NumberSpinner","minimum":0}},
-        {"caption":"Vorhandene Variable","name":"Target","width":"160px","edit":{"type":"SelectVariable"}}
-      ],"values":[]},
-      {"type":"RowLayout","items":[
-        {"type":"Button","caption":"Alle auswählen","onClick":"$rows = []; foreach ($Variables as $row) { $rows[] = $row; } UGNAS_SelectVariables($id, 'all', $rows);"},
-        {"type":"Button","caption":"Alle abwählen","onClick":"$rows = []; foreach ($Variables as $row) { $rows[] = $row; } UGNAS_SelectVariables($id, 'none', $rows);"},
-        {"type":"Button","caption":"Empfohlene Auswahl","onClick":"$rows = []; foreach ($Variables as $row) { $rows[] = $row; } UGNAS_SelectVariables($id, 'recommended', $rows);"}
-      ]},
-      {"type":"Label","caption":"Ziel 0: eigene Variable anlegen. Anderes Ziel: ausgewählte vorhandene Messwertvariable beschreiben. Abgewählte Variablen bleiben erhalten und werden nicht weiter aktualisiert. Löschen erfolgt bei Bedarf ausdrücklich im Objektbaum. Bei fehlenden Messwerten bleibt der letzte Variablenwert erhalten; für Automationen zusätzlich Verbindung prüfen."}
-    ]},
-    {"type":"ExpansionPanel","caption":"Premium-Visualisierung","items":[
-      {"type":"CheckBox","name":"TileEnabled","caption":"Eigene Visu-Kachel aktivieren"},
-      {"type":"ValidationTextBox","name":"Title","caption":"Anzeigename"},
-      {"type":"Select","name":"Theme","caption":"Farbschema","options":[{"caption":"Automatisch","value":"auto"},{"caption":"Hell","value":"light"},{"caption":"Dunkel","value":"dark"}]},
-      {"type":"SelectColor","name":"Accent","caption":"Akzentfarbe"},
-      {"type":"CheckBox","name":"Compact","caption":"Kompakte Abstände"},
-      {"type":"CheckBox","name":"ShowPools","caption":"Speicherpools anzeigen"},
-      {"type":"CheckBox","name":"ShowDisks","caption":"Laufwerke anzeigen"},
-      {"type":"CheckBox","name":"ShowFans","caption":"Lüfter anzeigen"},
-      {"type":"CheckBox","name":"ShowControls","caption":"Aktualisieren-Schaltfläche anzeigen"}
-    ]},
-    {"type":"ExpansionPanel","caption":"Warnschwellen","items":[
-      {"type":"NumberSpinner","name":"CPUWarning","caption":"CPU-Auslastung ab (%)","minimum":1,"maximum":100},
-      {"type":"NumberSpinner","name":"TemperatureWarning","caption":"CPU-Temperatur ab (°C)","minimum":20,"maximum":120},
-      {"type":"NumberSpinner","name":"StorageWarning","caption":"Speicherbelegung ab (%)","minimum":1,"maximum":100},
-      {"type":"Label","caption":"Warnungen erscheinen in der Kachel. UGOS-Statuscodes werden unverändert angezeigt und nicht als bestätigter SMART-/RAID-Gesundheitszustand interpretiert. Keine externen Benachrichtigungen."}
-    ]},
-    {"type":"ExpansionPanel","caption":"Erweiterte Einstellungen","items":[
-      {"type":"NumberSpinner","name":"Timeout","caption":"Zeitlimit pro Anfrage (Sekunden)","minimum":2,"maximum":30},
-      {"type":"CheckBox","name":"VerifyTLS","caption":"HTTPS-Zertifikat prüfen (empfohlen)"},
-      {"type":"ValidationTextBox","name":"CAFile","caption":"Optionale CA-Zertifikatsdatei auf dem Symcon-System"},
-      {"type":"Label","caption":"Bei selbstsigniertem NAS-Zertifikat eine vertrauenswürdige CA hinterlegen. Deaktivierte Zertifikatsprüfung oder HTTP nur bewusst im vertrauenswürdigen Netz verwenden. Zugangsdaten liegen in der Instanzkonfiguration und damit auch in Symcon-Backups."}
-    ]}
+    {
+      "type": "ExpansionPanel",
+      "caption": "Allgemein und NAS-Verbindung",
+      "expanded": true,
+      "items": [
+        {
+          "type": "CheckBox",
+          "name": "Enabled",
+          "caption": "Überwachung aktivieren"
+        },
+        {
+          "type": "ValidationTextBox",
+          "name": "BaseURL",
+          "caption": "NAS-Adresse, z. B. https://192.168.1.20:9443"
+        },
+        {
+          "type": "ValidationTextBox",
+          "name": "Username",
+          "caption": "Lokaler NAS-Benutzer"
+        },
+        {
+          "type": "PasswordTextBox",
+          "name": "Password",
+          "caption": "NAS-Passwort"
+        },
+        {
+          "type": "NumberSpinner",
+          "name": "Interval",
+          "caption": "Aktualisierungsintervall (Sekunden)",
+          "minimum": 15,
+          "maximum": 86400
+        },
+        {
+          "type": "Label",
+          "caption": "Nur Lesezugriffe über die lokale UGOS-Webschnittstelle. Keine Installation auf der NAS. Gerätefreigabe für Zwei-Faktor-Konten wird in dieser Version noch nicht unterstützt."
+        }
+      ]
+    },
+    {
+      "type": "ExpansionPanel",
+      "caption": "Variablenverwaltung – lizenzsparend",
+      "items": [
+        {
+          "type": "Label",
+          "caption": "Standard: keine Variablen. Die Kachel arbeitet unabhängig von der Auswahl.",
+          "name": "VariableSummary"
+        },
+        {
+          "type": "List",
+          "name": "Variables",
+          "caption": "Optionale Messwertvariablen",
+          "rowCount": 8,
+          "add": false,
+          "delete": false,
+          "loadValuesFromConfiguration": false,
+          "columns": [
+            {
+              "caption": "Aktiv",
+              "name": "Enabled",
+              "width": "70px",
+              "edit": {
+                "type": "CheckBox"
+              }
+            },
+            {
+              "caption": "Ident",
+              "name": "Ident",
+              "width": "190px",
+              "save": true
+            },
+            {
+              "caption": "Name",
+              "name": "Name",
+              "width": "auto",
+              "edit": {
+                "type": "ValidationTextBox"
+              }
+            },
+            {
+              "caption": "Typ",
+              "name": "Type",
+              "width": "80px"
+            },
+            {
+              "caption": "Einheit",
+              "name": "Unit",
+              "width": "65px"
+            },
+            {
+              "caption": "Darstellung",
+              "name": "Representation",
+              "width": "130px"
+            },
+            {
+              "caption": "Position",
+              "name": "Position",
+              "width": "80px",
+              "edit": {
+                "type": "NumberSpinner",
+                "minimum": 0
+              }
+            },
+            {
+              "caption": "Vorhandene Variable",
+              "name": "Target",
+              "width": "160px",
+              "edit": {
+                "type": "SelectVariable"
+              }
+            }
+          ],
+          "values": [],
+          "onEdit": "$rows = []; foreach ($Variables as $row) { $rows[] = $row; } UGNAS_RememberVariableSelection($id, $rows);"
+        },
+        {
+          "type": "RowLayout",
+          "items": [
+            {
+              "type": "Button",
+              "caption": "Alle auswählen",
+              "onClick": "$rows = []; foreach ($Variables as $row) { $rows[] = $row; } UGNAS_SelectVariables($id, 'all', $rows);"
+            },
+            {
+              "type": "Button",
+              "caption": "Alle abwählen",
+              "onClick": "$rows = []; foreach ($Variables as $row) { $rows[] = $row; } UGNAS_SelectVariables($id, 'none', $rows);"
+            },
+            {
+              "type": "Button",
+              "caption": "Empfohlene Auswahl",
+              "onClick": "$rows = []; foreach ($Variables as $row) { $rows[] = $row; } UGNAS_SelectVariables($id, 'recommended', $rows);"
+            }
+          ]
+        },
+        {
+          "type": "Label",
+          "caption": "Ziel 0: eigene Variable anlegen. Anderes Ziel: ausgewählte vorhandene Messwertvariable beschreiben. Abgewählte Variablen bleiben erhalten und werden nicht weiter aktualisiert. Löschen erfolgt bei Bedarf ausdrücklich im Objektbaum. Bei fehlenden Messwerten bleibt der letzte Variablenwert erhalten; für Automationen zusätzlich Verbindung prüfen."
+        }
+      ]
+    },
+    {
+      "type": "ExpansionPanel",
+      "caption": "Premium-Visualisierung",
+      "items": [
+        {
+          "type": "CheckBox",
+          "name": "TileEnabled",
+          "caption": "Eigene Visu-Kachel aktivieren"
+        },
+        {
+          "type": "ValidationTextBox",
+          "name": "Title",
+          "caption": "Anzeigename"
+        },
+        {
+          "type": "Select",
+          "name": "Theme",
+          "caption": "Farbschema",
+          "options": [
+            {
+              "caption": "Automatisch",
+              "value": "auto"
+            },
+            {
+              "caption": "Hell",
+              "value": "light"
+            },
+            {
+              "caption": "Dunkel",
+              "value": "dark"
+            }
+          ]
+        },
+        {
+          "type": "SelectColor",
+          "name": "Accent",
+          "caption": "Akzentfarbe"
+        },
+        {
+          "type": "CheckBox",
+          "name": "Compact",
+          "caption": "Kompakte Abstände"
+        },
+        {
+          "type": "CheckBox",
+          "name": "ShowPools",
+          "caption": "Speicherpools anzeigen"
+        },
+        {
+          "type": "CheckBox",
+          "name": "ShowDisks",
+          "caption": "Laufwerke anzeigen"
+        },
+        {
+          "type": "CheckBox",
+          "name": "ShowFans",
+          "caption": "Lüfter anzeigen"
+        },
+        {
+          "type": "CheckBox",
+          "name": "ShowControls",
+          "caption": "Aktualisieren-Schaltfläche anzeigen"
+        }
+      ]
+    },
+    {
+      "type": "ExpansionPanel",
+      "caption": "Warnschwellen",
+      "items": [
+        {
+          "type": "NumberSpinner",
+          "name": "CPUWarning",
+          "caption": "CPU-Auslastung ab (%)",
+          "minimum": 1,
+          "maximum": 100
+        },
+        {
+          "type": "NumberSpinner",
+          "name": "TemperatureWarning",
+          "caption": "CPU-Temperatur ab (°C)",
+          "minimum": 20,
+          "maximum": 120
+        },
+        {
+          "type": "NumberSpinner",
+          "name": "StorageWarning",
+          "caption": "Speicherbelegung ab (%)",
+          "minimum": 1,
+          "maximum": 100
+        },
+        {
+          "type": "Label",
+          "caption": "Warnungen erscheinen in der Kachel. UGOS-Statuscodes werden unverändert angezeigt und nicht als bestätigter SMART-/RAID-Gesundheitszustand interpretiert. Keine externen Benachrichtigungen."
+        }
+      ]
+    },
+    {
+      "type": "ExpansionPanel",
+      "caption": "Erweiterte Einstellungen",
+      "items": [
+        {
+          "type": "NumberSpinner",
+          "name": "Timeout",
+          "caption": "Zeitlimit pro Anfrage (Sekunden)",
+          "minimum": 2,
+          "maximum": 30
+        },
+        {
+          "type": "CheckBox",
+          "name": "VerifyTLS",
+          "caption": "HTTPS-Zertifikat prüfen (empfohlen)"
+        },
+        {
+          "type": "ValidationTextBox",
+          "name": "CAFile",
+          "caption": "Optionale CA-Zertifikatsdatei auf dem Symcon-System"
+        },
+        {
+          "type": "Label",
+          "caption": "Bei selbstsigniertem NAS-Zertifikat eine vertrauenswürdige CA hinterlegen. Deaktivierte Zertifikatsprüfung oder HTTP nur bewusst im vertrauenswürdigen Netz verwenden. Zugangsdaten liegen in der Instanzkonfiguration und damit auch in Symcon-Backups."
+        }
+      ]
+    }
   ],
-  "actions":[
-    {"type":"Label","caption":"Diagnose"},
-    {"type":"Button","caption":"Verbindung testen / jetzt aktualisieren","onClick":"echo UGNAS_Update($id) ? 'Abfrage erfolgreich. Formular erneut öffnen, um erkannte Messwerte zu sehen.' : 'Keine Aktualisierung. Diagnose nach erneutem Öffnen des Formulars prüfen; gegebenenfalls Wiederholsperre abwarten.';"}
+  "actions": [
+    {
+      "type": "Label",
+      "caption": "Diagnose",
+      "name": "Diagnostic"
+    },
+    {
+      "type": "Button",
+      "caption": "Verbindung testen / jetzt aktualisieren",
+      "onClick": "echo UGNAS_Update($id) ? 'Abfrage erfolgreich. Erkannte Messwerte stehen in der Variablenverwaltung bereit.' : 'Keine Aktualisierung. Diagnose prüfen; gegebenenfalls Wiederholsperre abwarten.';"
+    }
   ],
-  "status":[
-    {"code":201,"icon":"error","caption":"Konfiguration prüfen"},
-    {"code":202,"icon":"error","caption":"NAS-Abfrage fehlgeschlagen"}
+  "status": [
+    {
+      "code": 201,
+      "icon": "error",
+      "caption": "Konfiguration prüfen"
+    },
+    {
+      "code": 202,
+      "icon": "error",
+      "caption": "NAS-Abfrage fehlgeschlagen"
+    }
   ]
 }

@@ -166,7 +166,7 @@ final class UgosClient
             CURLOPT_SSL_VERIFYPEER => $this->verifyTLS,
             CURLOPT_SSL_VERIFYHOST => $this->verifyTLS ? 2 : 0,
             CURLOPT_HTTPHEADER => ['Accept: application/json', 'Content-Type: application/json'],
-            CURLOPT_USERAGENT => 'Symcon-UGREEN-Monitor/0.1',
+            CURLOPT_USERAGENT => 'Symcon-UGREEN-Monitor/0.2',
             CURLOPT_COOKIE => implode('; ', $cookies),
             CURLOPT_HEADERFUNCTION => function ($handle, string $line) use (&$headers): int {
                 $length = strlen($line);

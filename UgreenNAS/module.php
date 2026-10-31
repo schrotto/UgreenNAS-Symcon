@@ -23,6 +23,7 @@ class UgreenNAS extends IPSModuleStrict
             $this->RegisterPropertyInteger($key, $default);
         }
         $this->RegisterAttributeString('Snapshot', '{}');
+        $this->RegisterAttributeString('Catalog', '{}');
         $this->RegisterAttributeString('Source', '');
         $this->RegisterAttributeString('Diagnostic', 'Noch keine Abfrage durchgeführt.');
         $this->RegisterTimer('Poll', 0, 'UGNAS_Update($_IPS["TARGET"]);');
@@ -36,6 +37,7 @@ class UgreenNAS extends IPSModuleStrict
         $source = hash('sha256', $this->ReadPropertyString('BaseURL') . '|' . $this->ReadPropertyString('Username'));
         if ($source !== $this->ReadAttributeString('Source')) {
             $this->WriteAttributeString('Snapshot', '{}');
+            $this->WriteAttributeString('Catalog', '{}');
             $this->WriteAttributeString('Source', $source);
         }
         // Auch ein Passwort- oder Zertifikatwechsel darf keine alte Sitzung behalten.
@@ -44,6 +46,7 @@ class UgreenNAS extends IPSModuleStrict
         $this->SetBuffer('LastAttempt', '0');
         $this->SetBuffer('Failures', '0');
         $this->SetBuffer('Current', '0');
+        $this->SetBuffer('FormRows', '');
         try {
             $this->configureVariables();
             $this->validateConfiguration();
@@ -53,8 +56,8 @@ class UgreenNAS extends IPSModuleStrict
                 $this->markOffline();
             } else {
                 $this->SetStatus(102);
-                $this->WriteAttributeString('Diagnostic', 'Bereit. Nächste Abfrage läuft über den Timer oder „Jetzt aktualisieren“.');
-                $this->SetTimerInterval('Poll', max(15, $this->ReadPropertyInteger('Interval')) * 1000);
+                $this->WriteAttributeString('Diagnostic', 'Geräteerkennung startet. Die Variablenliste wird nach erfolgreicher Abfrage automatisch ergänzt.');
+                $this->SetTimerInterval('Poll', 1000);
             }
         } catch (Throwable $e) {
             $this->SetStatus(201);
@@ -146,9 +149,23 @@ class UgreenNAS extends IPSModuleStrict
             $pools = $optional('/ugreen/v1/storage/pool/list', 'Speicherpools');
             $disks = $optional('/ugreen/v2/storage/disk/list', 'Laufwerke');
             $snapshot = UgosTelemetry::normalize($machine, $stats, $pools, $disks);
+            $previousCatalog = $this->catalog();
             $snapshot['timestamp'] = time();
             $snapshot['warnings'] = $warnings;
             $this->WriteAttributeString('Snapshot', json_encode($snapshot, JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE));
+            $known = $previousCatalog;
+            foreach ($snapshot['metrics'] as $ident => $metric) {
+                unset($metric['value']);
+                $known[$ident] = $metric;
+            }
+            foreach ($known as &$metric) {
+                unset($metric['value']);
+            }
+            unset($metric);
+            $this->WriteAttributeString('Catalog', json_encode($known, JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE));
+            if (array_keys($previousCatalog) !== array_keys($this->catalog())) {
+                $this->refreshVariableForm();
+            }
             $this->SetBuffer('Session', $client->session());
             $this->SetBuffer('Failures', '0');
             $this->SetBuffer('NextAllowed', '0');
@@ -168,6 +185,7 @@ class UgreenNAS extends IPSModuleStrict
             $this->markOffline();
             return false;
         } finally {
+            $this->SetTimerInterval('Poll', max(15, $this->ReadPropertyInteger('Interval')) * 1000);
             IPS_SemaphoreLeave('UGNAS_' . $this->InstanceID);
             $this->publish();
         }
@@ -199,7 +217,7 @@ class UgreenNAS extends IPSModuleStrict
     private function catalog(): array
     {
         $base = UgosTelemetry::normalize([], [], null, null)['metrics'];
-        return array_replace($base, $this->snapshot()['metrics'] ?? []);
+        return array_replace($base, json_decode($this->ReadAttributeString('Catalog'), true) ?: [], $this->snapshot()['metrics'] ?? []);
     }
 
     private function configureVariables(): void
@@ -344,6 +362,7 @@ class UgreenNAS extends IPSModuleStrict
     private function publish(): void
     {
         $this->UpdateVisualizationValue($this->payload());
+        $this->UpdateFormField('Diagnostic', 'caption', $this->ReadAttributeString('Diagnostic'));
     }
 
     public function GetVisualizationTile(): string
@@ -364,22 +383,27 @@ class UgreenNAS extends IPSModuleStrict
         foreach ($Rows as &$row) {
             $row['Enabled'] = $Mode === 'all' || ($Mode === 'recommended' && in_array($row['Ident'], ['Online', 'CPU', 'RAM', 'CPUTemperature'], true));
         }
-        $this->UpdateFormField('Variables', 'values', json_encode($Rows, JSON_THROW_ON_ERROR));
+        $this->refreshVariableForm($Rows);
     }
 
-    public function GetConfigurationForm(): string
+    /** Hält auch noch nicht übernommene Formulareingaben bei der Erkennung fest. */
+    public function RememberVariableSelection(array $Rows): void
     {
-        $form = json_decode(file_get_contents(__DIR__ . '/form.json'), true, 64, JSON_THROW_ON_ERROR);
+        if (count($Rows) > 512) {
+            throw new InvalidArgumentException('Zu viele Variableneinträge.');
+        }
+        $this->SetBuffer('FormRows', json_encode($Rows, JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE));
+        $this->UpdateFormField('VariableSummary', 'caption', $this->variableSummary($Rows));
+    }
+
+    private function variableRows(array $input): array
+    {
         $catalog = $this->catalog();
         $rows = [];
-        try {
-            foreach ($this->rows() as $row) {
-                if (is_string($row['Ident'] ?? null)) {
-                    $rows[$row['Ident']] = $row;
-                }
+        foreach ($input as $row) {
+            if (is_string($row['Ident'] ?? null)) {
+                $rows[$row['Ident']] = $row;
             }
-        } catch (Throwable $e) {
-            // Formular zur Korrektur bleibt erreichbar.
         }
         foreach ($catalog as $id => $metric) {
             $row = $rows[$id] ?? ['Ident' => $id, 'Enabled' => false, 'Name' => $metric['name'], 'Target' => 0, 'Position' => count($rows) * 10];
@@ -388,10 +412,42 @@ class UgreenNAS extends IPSModuleStrict
             $row['Representation'] = match ($metric['unit']) { '%' => 'UGNAS.Percent', '°C' => '~Temperature', 'rpm' => 'UGNAS.RPM', 's' => 'UGNAS.Seconds', default => $metric['type'] === 0 ? 'UGNAS.Connection' : 'Standard' };
             $rows[$id] = $row;
         }
+        return array_values($rows);
+    }
+
+    private function variableSummary(array $rows): string
+    {
+        $catalog = $this->catalog();
         $selected = count(array_filter($rows, static fn ($r) => !empty($r['Enabled'])));
         $additional = count(array_filter($rows, fn ($r) => !empty($r['Enabled']) && empty($r['Target']) && isset($catalog[$r['Ident']]) && @$this->GetIDForIdent($r['Ident']) === false));
-        $form['elements'][1]['items'][1]['values'] = array_values($rows);
-        $form['elements'][1]['items'][0]['caption'] = $selected . ' Messwerte ausgewählt, davon ' . $additional . ' neue Variablen. Standard: 0 Variablen. Nach Erkennung werden Laufwerke und Pools ergänzt. Änderungen mit „Übernehmen“ speichern.';
+        $detection = empty($this->snapshot()['timestamp'])
+            ? ' Geräteabhängige Messwerte sind nach der ersten erfolgreichen Verbindung auswählbar.'
+            : ' Erkannte Messwerte sind vollständig auswählbar.';
+        return $selected . ' Messwerte ausgewählt, davon ' . $additional . ' neue Variablen. Standard: 0 Variablen.' . $detection . ' Änderungen mit „Übernehmen“ speichern.';
+    }
+
+    private function refreshVariableForm(?array $input = null): void
+    {
+        if ($input === null) {
+            $input = json_decode($this->GetBuffer('FormRows'), true);
+            $input = is_array($input) ? $input : $this->rows();
+        }
+        $rows = $this->variableRows($input);
+        $this->RememberVariableSelection($rows);
+        $this->UpdateFormField('Variables', 'values', json_encode($rows, JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE));
+    }
+
+    public function GetConfigurationForm(): string
+    {
+        $form = json_decode(file_get_contents(__DIR__ . '/form.json'), true, 64, JSON_THROW_ON_ERROR);
+        try {
+            $rows = $this->variableRows($this->rows());
+        } catch (Throwable $e) {
+            $rows = $this->variableRows([]);
+        }
+        $this->SetBuffer('FormRows', json_encode($rows, JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE));
+        $form['elements'][1]['items'][1]['values'] = $rows;
+        $form['elements'][1]['items'][0]['caption'] = $this->variableSummary($rows);
         $form['actions'][0]['caption'] = $this->ReadAttributeString('Diagnostic');
         return json_encode($form, JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE);
     }

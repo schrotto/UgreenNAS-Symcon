@@ -1,6 +1,6 @@
-# Testbericht – 0.1, Build 1
+# Testbericht – 0.2, Build 2
 
-Stand: 31.10.2026. Die folgenden Prüfungen wurden tatsächlich ausgeführt. Es bestand **keine Verbindung zu einer echten NAS oder einem Symcon-Dienst**.
+Stand: 31.10.2026. Die folgenden Prüfungen wurden tatsächlich ausgeführt. Bei den Entwicklerprüfungen bestand **keine Verbindung zu einer echten NAS oder einem Symcon-Dienst**. Vom Benutzer wurden im ersten Gerätetest korrekte CPU-, RAM-, Lüfter- und Festplattentemperaturwerte gemeldet. Die beiden Korrekturen in Build 2 sind am Gerät noch zu bestätigen.
 
 ## Ergebnisse
 
@@ -11,9 +11,9 @@ Stand: 31.10.2026. Die folgenden Prüfungen wurden tatsächlich ausgeführt. Es 
 | `module.json` | Gegen offizielles `moduleSchema.json` bestanden | Schema-Abruf vom 31.10.2026 |
 | `form.json` | Gegen offizielles `formSchema.json` bestanden | Kein echter Instanzeditor-/Konsolentest |
 | `library.json` | Alle Felder außer Versions-Enum schema-konform | Öffentliches Schema führt weiterhin nur Versionen bis 6.2; Mindestversion 8.1 deshalb formal vom alten Enum abgelehnt. Die Bibliothek gibt ihre tatsächliche Mindestversion an; das Schema wurde nicht verändert. |
-| Daten-/Clienttests | 29 Prüfungen bestanden | Synthetische Fixtures und echter lokaler HTTP-Testserver |
-| SymconStubs | 27 Prüfungen bestanden | Unveränderte offizielle Stubs, kein echter Kernel |
-| Gerenderter Browser | 32 Prüfungen bestanden | Headless Chromium/Brave mit Playwright, kein Symcon-Webclient |
+| Daten-/Clienttests | 39 Prüfungen bestanden | Synthetische Fixtures und echter lokaler HTTP-Testserver |
+| SymconStubs | 32 Prüfungen bestanden | Unveränderte offizielle Stubs, kein echter Kernel |
+| Gerenderter Browser | 33 Prüfungen bestanden | Headless Chromium/Brave mit Playwright, kein Symcon-Webclient |
 | Sichtkontrolle | Dunkel-, Hell- und Smartphone-Vorschau geöffnet und geprüft | Testdaten, keine Live-Messwerte |
 | ZIP | CRC und Bytegleichheit mit allen enthaltenen Workspace-Dateien geprüft | Installationsabnahme am Zielsystem noch erforderlich |
 
@@ -59,3 +59,11 @@ node tests/browser.cjs
 - IPSView/TileHtml, Android-Wandtablet, Touch-/Vollbildverhalten und echte kleine Symcon-Rasterkacheln.
 
 Diese Grenzen bleiben trotz bestandener lokaler Tests bestehen. Die nächste Abnahme ist ein Verbindungstest auf der genannten NAS mit der tatsächlich eingesetzten Symcon-Version.
+
+## Regressionen in Build 2
+
+Zusätzlich geprüft: zu 100 % an Volumes zugewiesener Pool bei nur 39,6 % tatsächlicher Volume-Belegung; gewichtete Summierung mehrerer unterschiedlich großer Volumes; leeres Volume; fehlende, ungültige und teilweise fehlende Volume-Kapazitäten. Es wird niemals auf Pool-Zuweisung zurückgefallen.
+
+Die erste Erkennung wird nach 1000 ms eingeplant, anschließend gilt das reguläre Pollingintervall. Der offene Formularstand wird nach Erkennung sofort ergänzt, ohne vorhandene noch nicht übernommene Auswahl/Namen zu verlieren. Der flüchtige Formularstand und der persistente Messwertkatalog sind mit unveränderten SymconStubs geprüft. Die tatsächliche Darstellung der aktualisierten Liste im Symcon-Instanzeditor ist weiterhin am Zielsystem zu prüfen.
+
+Vom Benutzer wurde außerdem eine funktionierende Anmeldung über HTTP zurückgemeldet. HTTP bleibt im Update unterstützt; bestehende BaseURL-Konfigurationen werden nicht geändert. HTTPS konnte beim Benutzer bisher nicht erfolgreich verwendet werden. Die Ursache ist ohne Fehlerdiagnose offen.
