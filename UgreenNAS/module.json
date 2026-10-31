@@ -1,0 +1,12 @@
+{
+  "id": "{E95793D0-6288-4955-B12E-1E0C8D2AEB71}",
+  "name": "UgreenNAS",
+  "type": 3,
+  "vendor": "UGREEN",
+  "url": "https://support.ugnas.com/",
+  "aliases": ["UGREEN NAS (UGOS Pro)"],
+  "parentRequirements": [],
+  "childRequirements": [],
+  "implemented": [],
+  "prefix": "UGNAS"
+}
