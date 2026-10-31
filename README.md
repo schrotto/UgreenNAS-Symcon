@@ -1,10 +1,10 @@
 # UGREEN NAS Monitoring für IP-Symcon
 
-Version **0.2, Build 2 – Testversion**, Stand 31.10.2026.
+Version **0.3, Build 3 – Testversion**, Stand 31.10.2026.
 
 Lokales Monitoring für UGREEN-NAS-Geräte mit UGOS Pro über deren Webschnittstelle. Es sind keine SSH-Verbindung, kein Docker-Container und kein Agent auf der NAS erforderlich. Die Bibliothek ist für IP-Symcon **ab 8.1** vorbereitet und verwendet `IPSModuleStrict` und das native HTML-SDK. Die tatsächlich eingesetzte Symcon-Version wurde noch nicht mitgeteilt.
 
-Referenzanforderung ist ein **DXP8800 Plus mit UGOS Pro 1.20.0.0142**. Weitere DXP-Modelle sollen über dieselben API-Endpunkte funktionieren. Aus dem ersten Gerätetest über HTTP wurden eine erfolgreiche Anmeldung und korrekte CPU-, RAM-, Lüfter- und Festplattentemperaturwerte zurückgemeldet. HTTPS konnte beim Benutzer bisher nicht erfolgreich verwendet werden; die Ursache ist offen. Die Korrekturen für Variablenliste und Speicherbelegung aus Build 2 müssen am Gerät noch bestätigt werden. Andere DXP-Modelle wurden noch nicht geprüft. Die UGOS-Schnittstelle ist nicht als stabile öffentliche Monitoring-API zugesichert. Firmwareänderungen können Anpassungen erfordern.
+Referenzanforderung ist ein **DXP8800 Plus mit UGOS Pro 1.20.0.0142**. Weitere DXP-Modelle sollen über dieselben API-Endpunkte funktionieren. Aus dem ersten Gerätetest über HTTP wurden eine erfolgreiche Anmeldung und korrekte CPU-, RAM-, Lüfter- und Festplattentemperaturwerte zurückgemeldet. Auf Benutzerwunsch verwendet Build 3 ausschließlich HTTP im lokalen Netzwerk. Die Korrekturen für Variablenliste und Speicherbelegung aus Build 2 müssen am Gerät noch bestätigt werden. Andere DXP-Modelle wurden noch nicht geprüft. Die UGOS-Schnittstelle ist nicht als stabile öffentliche Monitoring-API zugesichert. Firmwareänderungen können Anpassungen erfordern.
 
 ## Funktionen
 
@@ -33,14 +33,23 @@ Die Bibliothek besitzt die erforderliche Repository-Struktur. Für die Installat
 
 ### NAS-Verbindung einrichten
 
-1. NAS-Adresse einschließlich Protokoll und API-Port eingeben, üblicherweise `https://NAS-IP:9443`. Benutzerdefinierte Ports können abweichen. Kein `/ugreen` und keinen weiteren Pfad anhängen. Die übliche unverschlüsselte Variante ist `http://NAS-IP:9999`.
+1. NAS-Adresse einschließlich HTTP-Protokoll und API-Port eingeben, üblicherweise `http://NAS-IP:9999`. Benutzerdefinierte Ports können abweichen. Kein `/ugreen` und keinen weiteren Pfad anhängen.
 2. Einen **lokalen NAS-Benutzer** und dessen Passwort im Instanzformular eintragen. Ein UGREEN-Cloudkonto ist kein Ersatz für das lokale Konto. Das Konto benötigt Leserechte auf die abgefragten System- und Speicherinformationen. Welche Rechte auf der genannten Firmware ausreichen, muss am Gerät geprüft werden; nicht vorsorglich zusätzliche Rechte vergeben.
-3. HTTPS-Zertifikat prüfen lassen. Bei eigener CA die PEM-CA-Datei auf dem Symcon-System hinterlegen und deren absoluten Pfad angeben. Das Zertifikat muss zur eingegebenen Adresse passen. Bei selbstsigniertem Zertifikat ist eine bewusste Ausnahme über „HTTPS-Zertifikat prüfen“ möglich. HTTP verschlüsselt die Sitzung nicht.
+3. Den im UGOS-System eingestellten HTTP-Port verwenden. Es gibt keine Zertifikats- oder CA-Einstellungen mehr.
 4. Überwachung aktivieren und **Übernehmen** anklicken. Die erste Erkennung startet nach einer Sekunde; bei Bedarf **Verbindung testen / jetzt aktualisieren** ausführen.
 5. Erkannte Pools, Laufwerke und Lüfter erscheinen automatisch in der bereits geöffneten Variablenliste. Vor einer erfolgreichen Geräteverbindung sind nur die fünf allgemeinen Messwerte bekannt; es werden keine erfundenen Laufwerksplätze angezeigt. Gewünschte Variablen einzeln aktivieren und erneut übernehmen. Ohne Auswahl bleibt es bei **null zusätzlichen Variablen**.
 6. Instanz als Kachel in die Symcon-Kachelvisualisierung aufnehmen. Keine HTML-Box anlegen. Nach einem Modulupdate die geöffnete Visualisierung neu laden, damit Änderungen am HTML/CSS/JavaScript wirksam werden.
 
 Anmeldung mit RSA-Passwortverschlüsselung, Sitzungstoken und Cookies erfolgt automatisch. Die notwendige Freigabe eines neuen Clients bei **Zwei-Faktor-Anmeldung wird noch nicht unterstützt**. Ein solches Konto liefert eine Diagnose; die Zwei-Faktor-Prüfung wird nicht umgangen. Für produktive Nutzung mit diesem Konto muss der Freigabeablauf zunächst ergänzt werden.
+
+## Änderungen in Build 3
+
+- Ausschließlich HTTP, Vorgabe `http://NAS-IP:9999`; vorhandene HTTP-Adressen und Zugangsdaten bleiben erhalten.
+- HTTPS-, Zertifikats- und CA-Einstellungen aus dem Formular und der Gerätekommunikation entfernt. Historische Instanzeigenschaften bleiben ausschließlich zur Update-Kompatibilität intern registriert und werden nicht ausgewertet.
+- Bestehende HTTPS-Adressen werden mit einem klaren Hinweis abgelehnt und nicht stillschweigend auf HTTP umgeschrieben.
+- Die Korrekturen aus Build 2 sind weiterhin enthalten. Keine zusätzlichen Home-Assistant-Funktionen wie Zwei-Faktor-Gerätefreigabe oder neue Verbindungsfelder wurden ergänzt.
+
+Zum lokalen Update den Inhalt des bestehenden Bibliotheksordners ersetzen, Symcon neu starten, einmal übernehmen und die Visualisierung neu laden. Die vorhandene Instanz weiterverwenden.
 
 ## Änderungen in Build 2
 
@@ -94,7 +103,7 @@ Mindestintervall 15 Sekunden, Standard 60 Sekunden. Anfragen haben ein konfiguri
 
 Bei Fehlern greift eine Wiederholsperre von 30 bis 900 Sekunden. Abgelehnte Zugangsdaten führen sofort zu 15 Minuten Pause, um Kontosperren durch wiederholte Anmeldungen zu vermeiden. Der normale Timer berücksichtigt diese Sperre. Erneutes Übernehmen der Konfiguration setzt die Sperre und die Sitzung zurück. Nicht wiederholt auf „Übernehmen“ klicken, um eine gesperrte Anmeldung erneut anzustoßen.
 
-Verbindungsdetails, Zugangsdaten, Sitzungstoken und vollständige Geräteantworten werden nicht protokolliert und nicht an die Kachel übertragen. HTTPS wird standardmäßig geprüft. Weiterleitungen und Umgebungs-Proxys werden nicht verwendet; Antworten sind auf 2 MiB begrenzt. Das Modul hat eine feste Liste erlaubter Lese-Endpunkte. NAS-Passwörter werden als Instanzeigenschaft gespeichert und sind damit Bestandteil entsprechend geschützter Symcon-Konfigurationen und Backups.
+Verbindungsdetails, Zugangsdaten, Sitzungstoken und vollständige Geräteantworten werden nicht protokolliert und nicht an die Kachel übertragen. Die Verbindung verwendet ausschließlich HTTP. Weiterleitungen und Umgebungs-Proxys werden nicht verwendet; Antworten sind auf 2 MiB begrenzt. Das Modul hat eine feste Liste erlaubter Lese-Endpunkte. NAS-Passwörter werden als Instanzeigenschaft gespeichert und sind damit Bestandteil entsprechend geschützter Symcon-Konfigurationen und Backups.
 
 ## Skriptfunktionen
 
@@ -140,4 +149,4 @@ tests/
 
 Details stehen im [Testbericht](docs/TESTBERICHT.md). Es wurden PHP-Syntax, Modul-/Formularstruktur, Datenverarbeitung, echte HTTP-Anfragen gegen einen isolierten Testserver, RSA-Anmeldung, Sitzungswechsel, Fehlerfälle, offizielle unveränderte SymconStubs und ein tatsächlicher Browserlauf geprüft.
 
-**Offen:** Installation und Laufzeit im echten Symcon-Dienst, Login und Leserechte auf dem DXP8800 Plus mit UGOS Pro 1.20.0.0142, Antwortformat und Feldzuordnung aller Sensoren, DXP-Modellmatrix, NAS-TLS-Konfiguration, IPSView/TileHtml und Android-Wandtablet. Ein Browser- oder Stub-Test ersetzt diese Abnahme nicht. Die Version ist deshalb eine Testversion und noch keine als produktionsreif bestätigte Geräteintegration.
+**Offen:** Installation und Laufzeit im echten Symcon-Dienst, Login und Leserechte auf dem DXP8800 Plus mit UGOS Pro 1.20.0.0142, Antwortformat und Feldzuordnung aller Sensoren, DXP-Modellmatrix, IPSView/TileHtml und Android-Wandtablet. Ein Browser- oder Stub-Test ersetzt diese Abnahme nicht. Die Version ist deshalb eine Testversion und noch keine als produktionsreif bestätigte Geräteintegration.

@@ -1,4 +1,4 @@
-# Testbericht – 0.2, Build 2
+# Testbericht – 0.3, Build 3
 
 Stand: 31.10.2026. Die folgenden Prüfungen wurden tatsächlich ausgeführt. Bei den Entwicklerprüfungen bestand **keine Verbindung zu einer echten NAS oder einem Symcon-Dienst**. Vom Benutzer wurden im ersten Gerätetest korrekte CPU-, RAM-, Lüfter- und Festplattentemperaturwerte gemeldet. Die beiden Korrekturen in Build 2 sind am Gerät noch zu bestätigen.
 
@@ -11,8 +11,8 @@ Stand: 31.10.2026. Die folgenden Prüfungen wurden tatsächlich ausgeführt. Bei
 | `module.json` | Gegen offizielles `moduleSchema.json` bestanden | Schema-Abruf vom 31.10.2026 |
 | `form.json` | Gegen offizielles `formSchema.json` bestanden | Kein echter Instanzeditor-/Konsolentest |
 | `library.json` | Alle Felder außer Versions-Enum schema-konform | Öffentliches Schema führt weiterhin nur Versionen bis 6.2; Mindestversion 8.1 deshalb formal vom alten Enum abgelehnt. Die Bibliothek gibt ihre tatsächliche Mindestversion an; das Schema wurde nicht verändert. |
-| Daten-/Clienttests | 39 Prüfungen bestanden | Synthetische Fixtures und echter lokaler HTTP-Testserver |
-| SymconStubs | 32 Prüfungen bestanden | Unveränderte offizielle Stubs, kein echter Kernel |
+| Daten-/Clienttests | 41 Prüfungen bestanden | Synthetische Fixtures und echter lokaler HTTP-Testserver |
+| SymconStubs | 35 Prüfungen bestanden | Unveränderte offizielle Stubs, kein echter Kernel |
 | Gerenderter Browser | 33 Prüfungen bestanden | Headless Chromium/Brave mit Playwright, kein Symcon-Webclient |
 | Sichtkontrolle | Dunkel-, Hell- und Smartphone-Vorschau geöffnet und geprüft | Testdaten, keine Live-Messwerte |
 | ZIP | CRC und Bytegleichheit mit allen enthaltenen Workspace-Dateien geprüft | Installationsabnahme am Zielsystem noch erforderlich |
@@ -52,7 +52,6 @@ node tests/browser.cjs
 - Anmeldung am DXP8800 Plus mit UGOS Pro 1.20.0.0142 und tatsächlich benötigte NAS-Kontorechte.
 - Alle gerätespezifischen Antwortformen, Firmwarebesonderheiten, Temperaturidentitäten und Statuscodes.
 - Andere DXP-Modelle. Es gibt keine geprüfte Modellmatrix.
-- Funktionierende NAS-HTTPS-Zertifikatskette und Zugriff mit eigener CA.
 - Nicht-ASCII-NAS-Passwörter, alle Varianten des RSA-Headers und eventuelle zusätzliche Gerätefreigaben am echten Gerät.
 - Fallback-Endpunkt und einzelne teilweise nicht verfügbare Speicherendpunkte am echten Gerät.
 - Zwei-Faktor-Gerätefreigabe ist noch nicht implementiert.
@@ -67,3 +66,9 @@ Zusätzlich geprüft: zu 100 % an Volumes zugewiesener Pool bei nur 39,6 % tats�
 Die erste Erkennung wird nach 1000 ms eingeplant, anschließend gilt das reguläre Pollingintervall. Der offene Formularstand wird nach Erkennung sofort ergänzt, ohne vorhandene noch nicht übernommene Auswahl/Namen zu verlieren. Der flüchtige Formularstand und der persistente Messwertkatalog sind mit unveränderten SymconStubs geprüft. Die tatsächliche Darstellung der aktualisierten Liste im Symcon-Instanzeditor ist weiterhin am Zielsystem zu prüfen.
 
 Vom Benutzer wurde außerdem eine funktionierende Anmeldung über HTTP zurückgemeldet. HTTP bleibt im Update unterstützt; bestehende BaseURL-Konfigurationen werden nicht geändert. HTTPS konnte beim Benutzer bisher nicht erfolgreich verwendet werden. Die Ursache ist ohne Fehlerdiagnose offen.
+
+## Regressionen in Build 3
+
+Nach Entfernung von HTTPS erneut ausgeführt: sämtliche PHP-Syntaxprüfungen, Daten-/HTTP-Clienttests (41 Prüfungen) und unveränderte offizielle SymconStubs (35 Prüfungen). Zusätzlich geprüft: Ablehnung von HTTPS vor Netzwerkzugriff; keine Zertifikats-/CA-Felder im Konfigurationsformular; HTTP-Vorgabe für neue Instanzen; Erhalt einer bestehenden HTTP-Adresse; vollständiger HTTP-Poll auch mit einer alten, ungültigen und nun ignorierten CA-Dateieigenschaft.
+
+Die Modul-HTML ist seit dem bestandenen Browserlauf von Build 2 unverändert; dieser Browserlauf wurde für die reine HTTP-/Formularänderung nicht wiederholt. Es wurden keine zusätzlichen Home-Assistant-Funktionen eingebaut.

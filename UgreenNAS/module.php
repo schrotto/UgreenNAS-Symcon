@@ -9,12 +9,12 @@ class UgreenNAS extends IPSModuleStrict
     public function Create(): void
     {
         parent::Create();
-        foreach (['Enabled' => false, 'VerifyTLS' => true, 'TileEnabled' => true,
+        foreach (['Enabled' => false, 'TileEnabled' => true,
             'ShowDisks' => true, 'ShowPools' => true, 'ShowFans' => true, 'ShowControls' => true,
             'Compact' => false] as $key => $default) {
             $this->RegisterPropertyBoolean($key, $default);
         }
-        foreach (['BaseURL' => 'https://:9443', 'Username' => '', 'Password' => '', 'CAFile' => '',
+        foreach (['BaseURL' => 'http://:9999', 'Username' => '', 'Password' => '',
             'Variables' => '[]', 'Theme' => 'auto', 'Title' => 'UGREEN NAS'] as $key => $default) {
             $this->RegisterPropertyString($key, $default);
         }
@@ -23,6 +23,10 @@ class UgreenNAS extends IPSModuleStrict
             $this->RegisterPropertyInteger($key, $default);
         }
         $this->RegisterAttributeString('Snapshot', '{}');
+        // Nur für Konfigurationskompatibilität mit Build 1/2 registriert;
+        // keine Formularfelder und keine Verwendung bei HTTP-Anfragen.
+        $this->RegisterPropertyBoolean('VerifyTLS', true);
+        $this->RegisterPropertyString('CAFile', '');
         $this->RegisterAttributeString('Catalog', '{}');
         $this->RegisterAttributeString('Source', '');
         $this->RegisterAttributeString('Diagnostic', 'Noch keine Abfrage durchgeführt.');
@@ -40,7 +44,7 @@ class UgreenNAS extends IPSModuleStrict
             $this->WriteAttributeString('Catalog', '{}');
             $this->WriteAttributeString('Source', $source);
         }
-        // Auch ein Passwort- oder Zertifikatwechsel darf keine alte Sitzung behalten.
+        // Konfigurationsänderungen erhalten keine alte Sitzung.
         $this->SetBuffer('Session', '');
         $this->SetBuffer('NextAllowed', '0');
         $this->SetBuffer('LastAttempt', '0');
@@ -96,8 +100,8 @@ class UgreenNAS extends IPSModuleStrict
     private function client(): UgosClient
     {
         return new UgosClient($this->ReadPropertyString('BaseURL'), $this->ReadPropertyString('Username'),
-            $this->ReadPropertyString('Password'), $this->ReadPropertyBoolean('VerifyTLS'),
-            $this->ReadPropertyInteger('Timeout'), $this->GetBuffer('Session'), $this->ReadPropertyString('CAFile'));
+            $this->ReadPropertyString('Password'),
+            $this->ReadPropertyInteger('Timeout'), $this->GetBuffer('Session'));
     }
 
     public function Update(): bool

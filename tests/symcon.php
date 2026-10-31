@@ -21,6 +21,8 @@ IPS_ApplyChanges($id);
 verify(IPS_GetChildrenIDs($id) === [], 'Neuinstallation legt null Variablen an');
 $form = json_decode($module->GetConfigurationForm(), true, 64, JSON_THROW_ON_ERROR);
 verify(count($form['elements'][1]['items'][1]['values']) === 5, 'Grundkatalog ohne Gerätezugriff verfügbar');
+verify(!str_contains(json_encode($form), 'VerifyTLS') && !str_contains(json_encode($form), 'CAFile'), 'Zertifikats- und CA-Einstellungen sind vollständig aus dem Formular entfernt');
+verify(IPS_GetProperty($id, 'BaseURL') === 'http://:9999', 'Neue Instanzen verwenden HTTP als Vorgabe');
 verify(str_contains($module->GetVisualizationTile(), 'handleMessage('), 'Initiale HTML-SDK-Daten vorhanden');
 verify(!$module->Update(), 'Deaktiviert kein Netzwerkzugriff');
 try {
@@ -48,7 +50,9 @@ verify(IPS_GetInstance($id)['InstanceStatus'] === 201, 'Fehlende Zugangsdaten bl
 IPS_SetProperty($id, 'BaseURL', getenv('UGNAS_TEST_URL'));
 IPS_SetProperty($id, 'Username', 'monitor');
 IPS_SetProperty($id, 'Password', 'test-secret');
+IPS_SetProperty($id, 'CAFile', '/nicht-vorhanden/alte-einstellung.pem');
 IPS_ApplyChanges($id);
+verify(IPS_GetProperty($id, 'BaseURL') === getenv('UGNAS_TEST_URL'), 'Vorhandene HTTP-Adresse bleibt beim Übernehmen erhalten');
 verify((new ReflectionMethod($module, 'GetTimerInterval'))->invoke($module, 'Poll') === 1000, 'Erste Erkennung startet nach Übernehmen ohne volles Pollingintervall');
 $initialRows = json_decode($module->GetConfigurationForm(), true)['elements'][1]['items'][1]['values'];
 $initialRows[0]['Name'] = 'Noch nicht gespeichert';

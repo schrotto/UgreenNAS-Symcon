@@ -13,7 +13,7 @@
         {
           "type": "ValidationTextBox",
           "name": "BaseURL",
-          "caption": "NAS-Adresse, z. B. https://192.168.1.20:9443"
+          "caption": "NAS-Adresse, z. B. http://192.168.1.20:9999"
         },
         {
           "type": "ValidationTextBox",
@@ -248,18 +248,8 @@
           "maximum": 30
         },
         {
-          "type": "CheckBox",
-          "name": "VerifyTLS",
-          "caption": "HTTPS-Zertifikat prüfen (empfohlen)"
-        },
-        {
-          "type": "ValidationTextBox",
-          "name": "CAFile",
-          "caption": "Optionale CA-Zertifikatsdatei auf dem Symcon-System"
-        },
-        {
           "type": "Label",
-          "caption": "Bei selbstsigniertem NAS-Zertifikat eine vertrauenswürdige CA hinterlegen. Deaktivierte Zertifikatsprüfung oder HTTP nur bewusst im vertrauenswürdigen Netz verwenden. Zugangsdaten liegen in der Instanzkonfiguration und damit auch in Symcon-Backups."
+          "caption": "Die Verbindung zur NAS erfolgt über HTTP im lokalen Netzwerk. Zugangsdaten liegen in der Instanzkonfiguration und damit auch in Symcon-Backups."
         }
       ]
     }

@@ -21,17 +21,15 @@ final class UgosClient
         private string $baseUrl,
         private string $username,
         private string $password,
-        private bool $verifyTLS = true,
         private int $timeout = 8,
-        string $session = '',
-        private string $caFile = ''
+        string $session = ''
     ) {
         $parts = parse_url($baseUrl);
-        if (!$parts || !in_array($parts['scheme'] ?? '', ['http', 'https'], true)
+        if (!$parts || ($parts['scheme'] ?? '') !== 'http'
             || empty($parts['host']) || isset($parts['user']) || isset($parts['pass'])
             || isset($parts['query']) || isset($parts['fragment'])
             || !in_array($parts['path'] ?? '', ['', '/'], true)) {
-            throw new UgosApiException('NAS-Adresse muss http(s)://Host:Port ohne Pfad oder Zugangsdaten sein.');
+            throw new UgosApiException('NAS-Adresse muss http://Host:Port ohne Pfad oder Zugangsdaten sein. Diese Version verwendet ausschließlich HTTP.');
         }
         $this->baseUrl = rtrim($baseUrl, '/');
         $this->timeout = max(2, min(30, $timeout));
@@ -159,14 +157,12 @@ final class UgosClient
         curl_setopt_array($ch, [
             CURLOPT_CUSTOMREQUEST => $method,
             CURLOPT_FOLLOWLOCATION => false,
-            CURLOPT_PROTOCOLS => CURLPROTO_HTTP | CURLPROTO_HTTPS,
+            CURLOPT_PROTOCOLS => CURLPROTO_HTTP,
             CURLOPT_PROXY => '',
             CURLOPT_CONNECTTIMEOUT_MS => min(4000, $remaining),
             CURLOPT_TIMEOUT_MS => min($this->timeout * 1000, $remaining),
-            CURLOPT_SSL_VERIFYPEER => $this->verifyTLS,
-            CURLOPT_SSL_VERIFYHOST => $this->verifyTLS ? 2 : 0,
             CURLOPT_HTTPHEADER => ['Accept: application/json', 'Content-Type: application/json'],
-            CURLOPT_USERAGENT => 'Symcon-UGREEN-Monitor/0.2',
+            CURLOPT_USERAGENT => 'Symcon-UGREEN-Monitor/0.3',
             CURLOPT_COOKIE => implode('; ', $cookies),
             CURLOPT_HEADERFUNCTION => function ($handle, string $line) use (&$headers): int {
                 $length = strlen($line);
@@ -189,9 +185,6 @@ final class UgosClient
                 return strlen($chunk);
             }
         ]);
-        if ($this->caFile !== '') {
-            curl_setopt($ch, CURLOPT_CAINFO, $this->caFile);
-        }
         if ($body !== null) {
             curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($body, JSON_THROW_ON_ERROR));
         }
@@ -200,7 +193,7 @@ final class UgosClient
         $errno = curl_errno($ch);
         curl_close($ch);
         if ($ok === false) {
-            throw new UgosApiException($oversize ? 'UGOS-Antwort überschreitet 2 MiB.' : 'NAS-Verbindung fehlgeschlagen (cURL ' . $errno . '). Zertifikat, Adresse und Erreichbarkeit prüfen.');
+            throw new UgosApiException($oversize ? 'UGOS-Antwort überschreitet 2 MiB.' : 'NAS-Verbindung fehlgeschlagen (cURL ' . $errno . '). HTTP-Adresse, Port und Erreichbarkeit prüfen.');
         }
         if ($http !== 200) {
             throw new UgosApiException('NAS antwortet mit HTTP ' . $http . '.', $http);
