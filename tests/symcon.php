@@ -38,8 +38,13 @@ verify(count(IPS_GetChildrenIDs($id)) === 1, 'Nur einzeln ausgewählte Variable 
 $variable = IPS_GetChildrenIDs($id)[0];
 verify(IPS_GetVariable($variable)['VariableType'] === 2, 'CPU hat Float-Datentyp');
 IPS_SetName($variable, 'Eigener Name');
+IPS_SetVariableCustomProfile($variable, '~Temperature');
 IPS_ApplyChanges($id);
-verify(IPS_GetName($variable) === 'Eigener Name', 'Benutzername bleibt bei ApplyChanges erhalten');
+verify(IPS_GetObjectIDByIdent('CPU', $id) === $variable && IPS_GetName($variable) === 'Eigener Name'
+    && IPS_GetObject($variable)['ObjectPosition'] === 30, 'ID, Name und Position bleiben bei der Umstellung erhalten');
+$cpuPresentation = IPS_GetVariablePresentation($variable);
+verify($cpuPresentation['PRESENTATION'] === VARIABLE_PRESENTATION_VALUE_PRESENTATION && $cpuPresentation['SUFFIX'] === ' %',
+    'Vorhandenes Legacy-Profil wird durch native CPU-Darstellung ersetzt');
 $rows[0]['Enabled'] = false;
 IPS_SetProperty($id, 'Variables', json_encode($rows));
 IPS_ApplyChanges($id);
@@ -148,6 +153,22 @@ verify(str_contains($report, 'LAN-Statistik') && str_contains($report, 'HTTP 404
 IPS_SetProperty($id, 'Username', 'monitor');
 IPS_ApplyChanges($id);
 verify($module->Update(), 'Neue Messwerte für den Auswahltest erkannt');
+$module->RequestAction('SetTileMetricVisibility', ['id' => 'LANSend', 'visible' => false]);
+$tileData = json_decode((new ReflectionMethod($module, 'payload'))->invoke($module), true);
+verify(count($tileData['extraMetrics']) === 7 && $tileData['hiddenTileMetrics'] === ['LANSend'],
+    'Kachelauswahl speichert nur den betroffenen Messwert und funktioniert ohne angelegte Zusatzvariablen');
+IPS_ApplyChanges($id);
+$tileData = json_decode((new ReflectionMethod($module, 'payload'))->invoke($module), true);
+verify($tileData['hiddenTileMetrics'] === ['LANSend'], 'Kachelauswahl bleibt nach Übernehmen bestehen');
+$module->RequestAction('SetTileMetricVisibility', ['id' => 'LANSend', 'visible' => true]);
+$tileData = json_decode((new ReflectionMethod($module, 'payload'))->invoke($module), true);
+verify($tileData['hiddenTileMetrics'] === [], 'Ausgeblendeter Wert lässt sich gezielt wieder einblenden');
+try {
+    $module->RequestAction('SetTileMetricVisibility', ['id' => 'CPU', 'visible' => false]);
+    throw new RuntimeException('Fremder Ident akzeptiert');
+} catch (InvalidArgumentException $e) {
+    verify(true, 'Kachelauswahl akzeptiert nur die freigegebenen Messwert-Idents');
+}
 $snapshot = json_decode((new ReflectionMethod($module, 'ReadAttributeString'))->invoke($module, 'Snapshot'), true);
 $selections = [];
 foreach ($snapshot['metrics'] as $ident => $metric) {
@@ -165,5 +186,13 @@ foreach ($selections as ['Ident' => $ident]) {
     $expected = $metric['type'] === 2 ? (float) $metric['value'] : $metric['value'];
     verify(GetValue($variableId) === $expected && IPS_GetVariable($variableId)['VariableType'] === $metric['type'],
         'Symcon-Variable übernimmt Messwert und Typ für ' . $ident);
+    verify(IPS_GetVariablePresentation($variableId)['PRESENTATION'] === VARIABLE_PRESENTATION_VALUE_PRESENTATION,
+        'Native Darstellung für ' . $ident);
 }
+$lanId = IPS_GetObjectIDByIdent('LANSend', $id);
+$lanIntervals = json_decode(IPS_GetVariablePresentation($lanId)['INTERVALS'], true);
+$ramIntervals = json_decode(IPS_GetVariablePresentation(IPS_GetObjectIDByIdent('RAMFree', $id))['INTERVALS'], true);
+verify($lanIntervals[0]['IntervalMinValue'] === 0 && $lanIntervals[0]['ConversionFactor'] === 1000
+    && $lanIntervals[0]['SuffixValue'] === ' kB/s' && $ramIntervals[2]['ConversionFactor'] === 1000000000
+    && $ramIntervals[2]['SuffixValue'] === ' GB', 'Native Darstellung skaliert LAN und RAM bei unveränderten Rohwerten');
 echo "Bestanden: $checks SymconStub-Prüfungen\n";

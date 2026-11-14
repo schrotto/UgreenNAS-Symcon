@@ -26,6 +26,7 @@ class UgreenNAS extends IPSModuleStrict
         $this->RegisterAttributeString('Catalog', '{}');
         $this->RegisterAttributeString('Source', '');
         $this->RegisterAttributeString('Diagnostic', 'Noch keine Abfrage durchgeführt.');
+        $this->RegisterAttributeString('HiddenTileMetrics', '[]');
         $this->RegisterTimer('Poll', 0, 'UGNAS_Update($_IPS["TARGET"]);');
     }
 
@@ -98,6 +99,7 @@ class UgreenNAS extends IPSModuleStrict
                 $this->WriteAttributeString('Snapshot', '{}');
                 $this->WriteAttributeString('Catalog', '{}');
                 $this->WriteAttributeString('Source', $source);
+                $this->WriteAttributeString('HiddenTileMetrics', '[]');
             }
             $this->configureVariables();
             $this->validateConfiguration();
@@ -267,6 +269,19 @@ class UgreenNAS extends IPSModuleStrict
 
     public function RequestAction(string $Ident, mixed $Value): void
     {
+        if ($Ident === 'SetTileMetricVisibility' && $this->ReadPropertyBoolean('TileEnabled')
+            && is_array($Value) && is_string($Value['id'] ?? null) && is_bool($Value['visible'] ?? null)
+            && UgosTelemetry::isAdditionalMetric($Value['id']) && isset($this->catalog()[$Value['id']])) {
+            $hidden = $this->hiddenTileMetrics();
+            if ($Value['visible']) {
+                $hidden = array_values(array_diff($hidden, [$Value['id']]));
+            } elseif (!in_array($Value['id'], $hidden, true)) {
+                $hidden[] = $Value['id'];
+            }
+            $this->WriteAttributeString('HiddenTileMetrics', json_encode($hidden, JSON_THROW_ON_ERROR));
+            $this->UpdateVisualizationValue($this->payload());
+            return;
+        }
         if ($Ident !== 'Refresh' || $Value !== true || !$this->ReadPropertyBoolean('TileEnabled')
             || !$this->ReadPropertyBoolean('ShowControls')) {
             throw new InvalidArgumentException('Nicht erlaubte Kachelaktion.');
@@ -297,6 +312,11 @@ class UgreenNAS extends IPSModuleStrict
     private function configureVariables(): void
     {
         $catalog = $this->catalog();
+        foreach (IPS_GetChildrenIDs($this->InstanceID) as $variableId) {
+            if (IPS_VariableExists($variableId)) {
+                $this->migratePresentation($variableId, $catalog);
+            }
+        }
         // Vorab alle Ziele prüfen, bevor eine neue Variable angelegt wird.
         $targets = [];
         foreach ($this->rows() as $row) {
@@ -327,44 +347,94 @@ class UgreenNAS extends IPSModuleStrict
             }
             $name = trim((string) ($row['Name'] ?? '')) ?: $m['name'];
             $position = max(0, (int) ($row['Position'] ?? 0));
-            $profile = $this->profile($m);
-            match ($m['type']) {
-                0 => $this->RegisterVariableBoolean($id, $name, $profile, $position),
-                1 => $this->RegisterVariableInteger($id, $name, $profile, $position),
-                2 => $this->RegisterVariableFloat($id, $name, $profile, $position),
-                3 => $this->RegisterVariableString($id, $name, '', $position)
-            };
+            $this->registerMetric($id, $name, $position, $m);
         }
     }
 
-    private function profileName(array $metric): string
+    private function registerMetric(string $id, string $name, int $position, array $metric): void
     {
-        return match ($metric['unit']) {
-            '°C' => '~Temperature',
-            '%' => 'UGNAS.Percent',
-            'rpm' => 'UGNAS.RPM',
-            's' => 'UGNAS.Seconds',
-            'B' => 'UGNAS.Bytes',
-            'B/s' => 'UGNAS.BytesPerSecond',
-            'h' => 'UGNAS.Hours',
-            default => $metric['type'] === 0 ? 'UGNAS.Connection' : ''
+        $presentation = $this->presentation($metric);
+        match ($metric['type']) {
+            0 => $this->RegisterVariableBoolean($id, $name, $presentation, $position),
+            1 => $this->RegisterVariableInteger($id, $name, $presentation, $position),
+            2 => $this->RegisterVariableFloat($id, $name, $presentation, $position),
+            3 => $this->RegisterVariableString($id, $name, $presentation, $position)
         };
     }
 
-    private function profile(array $metric): string
+    private function migratePresentation(int $variableId, array $catalog): void
     {
-        $name = $this->profileName($metric);
-        if ($name !== '' && $name !== '~Temperature' && !IPS_VariableProfileExists($name)) {
-            IPS_CreateVariableProfile($name, $metric['type']);
-            if ($metric['type'] === 0) {
-                IPS_SetVariableProfileAssociation($name, 0, 'Offline', '', 0xD97B69);
-                IPS_SetVariableProfileAssociation($name, 1, 'Online', '', 0x52D6B0);
-            } else {
-                IPS_SetVariableProfileText($name, '', ' ' . $metric['unit']);
-                IPS_SetVariableProfileDigits($name, $metric['type'] === 2 && $metric['unit'] !== 'B' ? 1 : 0);
-            }
+        $object = IPS_GetObject($variableId);
+        $id = $object['ObjectIdent'];
+        $metric = $catalog[$id] ?? null;
+        if ($metric === null && preg_match('/^(?:Fan_(?:cpu_fan|device_fan)_\d+|(?:Pool|Disk|Volume)_[a-f0-9]{16}_(?:Used|Status|Temperature|PowerOnHours|Available))$/D', $id)) {
+            // Die Variable kann nach einem Datenquellenwechsel noch vorhanden sein.
+            [$type, $unit] = match (true) {
+                str_starts_with($id, 'Fan_') => [1, 'rpm'],
+                str_ends_with($id, '_Temperature') => [2, '°C'],
+                str_ends_with($id, '_Used') => [2, '%'],
+                str_ends_with($id, '_Available') => [2, 'B'],
+                str_ends_with($id, '_PowerOnHours') => [1, 'h'],
+                default => [3, '']
+            };
+            $metric = ['type' => $type, 'unit' => $unit];
         }
-        return $name;
+        $variable = IPS_GetVariable($variableId);
+        if ($metric === null || $variable['VariableType'] !== $metric['type']) {
+            return;
+        }
+        // Modulvorgabe ersetzen und vorhandene native Benutzerdarstellungen erhalten.
+        $this->registerMetric($id, $object['ObjectName'], $object['ObjectPosition'], $metric);
+        if ((IPS_GetVariablePresentation($variableId)['PRESENTATION'] ?? '') === VARIABLE_PRESENTATION_LEGACY) {
+            IPS_SetVariableCustomPresentation($variableId, []);
+        }
+    }
+
+    private function presentation(array $metric): array
+    {
+        $display = ['PRESENTATION' => VARIABLE_PRESENTATION_VALUE_PRESENTATION];
+        if ($metric['type'] === 0) {
+            $display['OPTIONS'] = json_encode([
+                ['Value' => false, 'Caption' => 'Offline', 'ColorActive' => true, 'ColorValue' => 0xD97B69],
+                ['Value' => true, 'Caption' => 'Online', 'ColorActive' => true, 'ColorValue' => 0x52D6B0]
+            ], JSON_THROW_ON_ERROR);
+        }
+        $unit = $metric['unit'];
+        if ($unit === '') {
+            return $display;
+        }
+        $display['SUFFIX'] = ' ' . $unit;
+        if ($metric['type'] === 2) {
+            $display['DIGITS'] = 1;
+        }
+        if ($unit === '%') {
+            $display += ['PERCENTAGE' => true, 'MIN' => 0, 'MAX' => 100];
+        }
+        if ($unit === '°C') {
+            $display['USAGE_TYPE'] = 1;
+        }
+        if ($unit === 'B' || $unit === 'B/s') {
+            $intervals = [];
+            foreach (['k', 'M', 'G', 'T', 'P'] as $index => $prefix) {
+                $factor = 1000 ** ($index + 1);
+                // Endgrenze direkt unter der nächsten Einheit, auch für Fließkommawerte.
+                $upper = $factor * 1000 * (1.0 - PHP_FLOAT_EPSILON / 2);
+                $intervals[] = [
+                    'IntervalMinValue' => $index === 0 ? 0 : $factor,
+                    'IntervalMaxValue' => $upper,
+                    'ConversionFactor' => $factor,
+                    'SuffixActive' => true,
+                    'SuffixValue' => ' ' . $prefix . $unit,
+                    'DigitsActive' => true,
+                    'DigitsValue' => $index === 0 ? 3 : 2,
+                    'ConstantActive' => false,
+                    'PrefixActive' => false
+                ];
+            }
+            $display['INTERVALS_ACTIVE'] = true;
+            $display['INTERVALS'] = json_encode($intervals, JSON_THROW_ON_ERROR);
+        }
+        return $display;
     }
 
     private function validateTarget(int $target, int $type): void
@@ -409,6 +479,13 @@ class UgreenNAS extends IPSModuleStrict
     private function payload(): string
     {
         $s = $this->snapshot();
+        $extraMetrics = [];
+        foreach ($this->catalog() as $ident => $metric) {
+            if (UgosTelemetry::isAdditionalMetric($ident)) {
+                $metric['value'] = $s['metrics'][$ident]['value'] ?? null;
+                $extraMetrics[] = $metric;
+            }
+        }
         $enabled = $this->ReadPropertyBoolean('Enabled');
         $fresh = $enabled && $this->GetBuffer('Current') === '1' && $this->GetStatus() === 102 && !empty($s['timestamp'])
             && time() - $s['timestamp'] <= max(45, $this->ReadPropertyInteger('Interval') * 2);
@@ -427,6 +504,7 @@ class UgreenNAS extends IPSModuleStrict
             }
         }
         return json_encode(['enabled' => $enabled, 'fresh' => $fresh, 'data' => $s, 'alerts' => $alerts,
+            'extraMetrics' => $extraMetrics, 'hiddenTileMetrics' => $this->hiddenTileMetrics(),
             'diagnostic' => $this->ReadAttributeString('Diagnostic'), 'now' => time(),
             'staleAfter' => max(45, $this->ReadPropertyInteger('Interval') * 2),
             'nextAllowed' => (int) $this->GetBuffer('NextAllowed'),
@@ -439,6 +517,11 @@ class UgreenNAS extends IPSModuleStrict
             'thresholds' => ['cpu' => $this->ReadPropertyInteger('CPUWarning'),
                 'temperature' => $this->ReadPropertyInteger('TemperatureWarning'), 'storage' => $this->ReadPropertyInteger('StorageWarning')]],
             JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE);
+    }
+
+    private function hiddenTileMetrics(): array
+    {
+        return json_decode($this->ReadAttributeString('HiddenTileMetrics'), true) ?: [];
     }
 
     private function publish(): void
@@ -490,8 +573,12 @@ class UgreenNAS extends IPSModuleStrict
         foreach ($catalog as $id => $metric) {
             $row = $rows[$id] ?? ['Ident' => $id, 'Enabled' => false, 'Name' => $metric['name'], 'Target' => 0, 'Position' => count($rows) * 10];
             $row['Type'] = ['Boolean', 'Integer', 'Float', 'String'][$metric['type']];
-            $row['Unit'] = $metric['unit'];
-            $row['Representation'] = $this->profileName($metric) ?: 'Standard';
+            $row['Unit'] = match ($metric['unit']) {
+                'B' => 'kB, MB, GB, …',
+                'B/s' => 'kB/s, MB/s, …',
+                default => $metric['unit']
+            };
+            $row['Representation'] = 'Wertdarstellung';
             $rows[$id] = $row;
         }
         return array_values($rows);

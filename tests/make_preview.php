@@ -2,10 +2,12 @@
 require __DIR__ . '/fixtures.php';
 require __DIR__ . '/../libs/Telemetry.php';
 $f = telemetryFixtures();
-$s = UgosTelemetry::normalize($f['machine'], $f['stats'], $f['pools'], $f['disks']);
+$s = UgosTelemetry::normalize($f['machine'], $f['stats'], $f['pools'], $f['disks'], $f['network']);
 $s['timestamp'] = 1793458800;
 $s['warnings'] = [];
 $p = ['enabled' => true, 'fresh' => true, 'data' => $s, 'alerts' => [], 'diagnostic' => 'Designvorschau mit synthetischen Testdaten. Keine Verbindung zu einer NAS.', 'now' => $s['timestamp'], 'staleAfter' => 120, 'nextAllowed' => 0,
+    'extraMetrics' => array_values(array_filter($s['metrics'], static fn (array $metric) => UgosTelemetry::isAdditionalMetric($metric['id']))),
+    'hiddenTileMetrics' => [],
     'options' => ['title' => 'Speicherzentrale', 'tileEnabled' => true, 'theme' => 'dark', 'accent' => '#52d6b0', 'compact' => false, 'disks' => true, 'pools' => true, 'fans' => true, 'controls' => true],
     'thresholds' => ['cpu' => 90, 'temperature' => 80, 'storage' => 85]];
 $json = json_encode($p, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE);

@@ -17,6 +17,12 @@ final class UgosTelemetry
         return is_scalar($value) && !is_bool($value) ? mb_substr((string) $value, 0, 160) : '';
     }
 
+    public static function isAdditionalMetric(string $ident): bool
+    {
+        return in_array($ident, ['LANSend', 'LANReceive', 'RAMFree', 'RAMCache'], true)
+            || preg_match('/^(?:Volume_[a-f0-9]{16}_Available|Disk_[a-f0-9]{16}_PowerOnHours)$/D', $ident) === 1;
+    }
+
     /** Pool-used ist Volume-Zuweisung, nicht die Dateisystembelegung. */
     public static function volumeUsage(mixed $volumes): array
     {

@@ -1,6 +1,6 @@
 # UGREEN NAS Monitoring für IP-Symcon
 
-Version **0.5, Build 5 – Testversion**, Stand 14.11.2026.
+Version **0.6, Build 6 – Testversion**, Stand 14.11.2026.
 
 Lokales Monitoring für UGREEN-NAS-Geräte mit UGOS Pro über deren Webschnittstelle. Es sind keine SSH-Verbindung, kein Docker-Container und kein Agent auf der NAS erforderlich. Die Bibliothek ist für IP-Symcon **ab 8.1** vorbereitet und verwendet `IPSModuleStrict` und das native HTML-SDK. Die tatsächlich eingesetzte Symcon-Version wurde noch nicht mitgeteilt.
 
@@ -41,6 +41,12 @@ Für die Installation über **Module Control → Hinzufügen** die Repository-Ad
 5. Instanz als Kachel in die Symcon-Kachelvisualisierung aufnehmen. Keine HTML-Box anlegen. Nach einem Modulupdate die geöffnete Visualisierung neu laden, damit Änderungen am HTML/CSS/JavaScript wirksam werden.
 
 Anmeldung mit RSA-Passwortverschlüsselung, Sitzungstoken und Cookies erfolgt automatisch. Die notwendige Freigabe eines neuen Clients bei **Zwei-Faktor-Anmeldung wird noch nicht unterstützt**. Ein solches Konto liefert eine Diagnose; die Zwei-Faktor-Prüfung wird nicht umgangen. Für produktive Nutzung mit diesem Konto muss der Freigabeablauf zunächst ergänzt werden.
+
+## Änderungen in Build 6
+
+Unter **Zusätzliche Messwerte → Messwerte auswählen** lässt sich jeder zusätzliche LAN-, RAM-, Volume- und Laufwerkswert einzeln ein- oder ausblenden. Die Auswahl wird für die Symcon-Instanz gespeichert. Die Messwerte erscheinen auch dann in der Kachel, wenn in der Variablenverwaltung keine Statusvariablen aktiviert wurden.
+
+Modulvariablen verwenden native Symcon-Wertdarstellungen. Bei der Umstellung bestehender Variablen werden ihre IDs beibehalten. Benutzerdefinierte Legacy-Darstellungen an Modulvariablen werden durch die nativen Vorgaben ersetzt. Vorhandene native Benutzerdarstellungen haben Vorrang. Die automatische Skalierung verwendet kB, MB, GB und bei größeren Werten TB oder PB, bei LAN jeweils pro Sekunde. Skripte und Archive erhalten dieselben Rohwerte in Byte oder Byte pro Sekunde. [Symcon-Dokumentation zur Wertdarstellung](https://www.symcon.de/en/service/documentation/developer-area/sdk-tools/sdk-php/presentations/value-presentation/)
 
 ## Änderungen in Build 5
 
@@ -91,19 +97,19 @@ Für ein lokales Update den Inhalt des bestehenden Bibliotheksordners durch Buil
 | Je Laufwerk: UGOS-Status | String | Rohstatus | aus |
 | Je Laufwerk: Betriebsstunden | Integer | h | aus |
 
-Die Kachel erhält ihre Daten direkt aus dem Instanzattribut und funktioniert unabhängig von den optionalen Variablen. Sitzungstoken liegen nur in einem flüchtigen Buffer. Es gibt keine Hilfs-, Debug- oder HTML-Box-Variablen. Profile werden erst bei tatsächlich angelegten Variablen benötigt und zählen nicht als Statusvariablen.
+Die Kachel erhält ihre Daten direkt aus dem Instanzattribut und funktioniert unabhängig von den optionalen Variablen. Sitzungstoken liegen nur in einem flüchtigen Buffer. Es gibt keine Hilfs-, Debug- oder HTML-Box-Variablen. Das Modul weist den angelegten Statusvariablen native Symcon-Wertdarstellungen zu.
 
 Standard: **0**, empfohlene Auswahl: **4** Variablen. Maximale Auswahl bei den implementierten Erkennungsgrenzen: `9 + Lüfter + 2 × Pools + Volumes + 3 × Laufwerke`. Je 16 CPU- und Gehäuselüfter, je 32 Pools und Laufwerke sowie insgesamt bis zu 256 Volumes ergeben maximal **457** Variablen einer aktuellen Datenquelle. Erhaltene Altvariablen können diese Zahl erhöhen. Nicht erkannte Komponenten werden nicht als Platzhalter angelegt.
 
-**Vorhandene Variable**: Ziel `0` legt eine eigene Variable an. Eine andere ausgewählte Variable wird mit dem Messwert beschrieben und spart eine zusätzliche Variable. Sie muss zum Datentyp passen und darf keine Variablenaktion besitzen. Die Auswahl ist damit ein ausdrücklicher Schreibauftrag für diese Symcon-Variable. Namen und Profile externer Variablen bleiben unangetastet.
+**Vorhandene Variable**: Ziel `0` legt eine eigene Variable an. Eine andere ausgewählte Variable wird mit dem Messwert beschrieben und spart eine zusätzliche Variable. Sie muss zum Datentyp passen und darf keine Variablenaktion besitzen. Die Auswahl ist damit ein ausdrücklicher Schreibauftrag für diese Symcon-Variable. Für extern zugeordnete Variablen gilt deren eigene Darstellung.
 
-Name und Position gelten für das erstmalige Anlegen eigener Variablen. Spätere Benutzereinstellungen im Objektbaum bleiben erhalten. Abwählen stoppt die Aktualisierung, löscht aber nichts. Nicht mehr benötigte Variablen können nach Prüfung ihrer Verknüpfungen ausdrücklich im Objektbaum gelöscht werden; es gibt keinen automatischen Löschmechanismus.
+Name und Position gelten für das erstmalige Anlegen eigener Variablen. Der Objektbaum übernimmt die bestehenden Namen und Positionen bei der Umstellung auf native Darstellungen. Abwählen stoppt die Aktualisierung, löscht aber nichts. Nicht mehr benötigte Variablen können nach Prüfung ihrer Verknüpfungen ausdrücklich im Objektbaum gelöscht werden; es gibt keinen automatischen Löschmechanismus.
 
 Fehlende Messwerte überschreiben bestehende Werte nicht mit `0`. Für Automationen bedeutet das: Der letzte Messwert kann alt sein. Bei Bedarf die optionale Verbindungsvariable mitverwenden und zusätzlich den Änderungs-/Aktualisierungszeitpunkt prüfen. Eine erfolgreiche Verbindung garantiert nicht, dass jeder optionale Sensor oder Speicherendpunkt verfügbar ist.
 
 ## Visualisierung
 
-CPU, RAM und CPU-Temperatur bilden die Hauptanzeige. Darunter folgen Speicherpools mit Volume-Belegungsbalken, Laufwerke und Kühlung. Warnschwellen bleiben sichtbar. Diagnose ist aufklappbar und bleibt bei Updates geöffnet. Lange Namen werden umgebrochen. Kleine Kacheln verwenden eine vertikale Anordnung und vertikales Scrollen. Die Kachel steuert keinen Vollbildmodus der Host-App.
+CPU, RAM und CPU-Temperatur bilden die Hauptanzeige. Darunter folgen die einzeln auswählbaren zusätzlichen Messwerte, Speicherpools mit Volume-Belegungsbalken, Laufwerke und Kühlung. Warnschwellen bleiben sichtbar. Diagnose ist aufklappbar und bleibt bei Updates geöffnet. Lange Namen werden umgebrochen. Kleine Kacheln verwenden eine vertikale Anordnung und vertikales Scrollen. Die Kachel steuert keinen Vollbildmodus der Host-App.
 
 Konfigurierbar sind Anzeigename, Farbschema, Akzentfarbe, kompakte Abstände, Pools, Laufwerke, Lüfter und die Aktualisieren-Schaltfläche. Das Hauptdashboard bleibt sichtbar. Keine externen Schriften, Bilder, Bibliotheken oder Cloud-Dienste werden geladen.
 
@@ -129,7 +135,7 @@ Verbindungsdetails, Zugangsdaten, Sitzungstoken und vollständige Geräteantwort
 $erfolgreich = UGNAS_Update(12345);
 ```
 
-`UGNAS_SelectVariables` ist eine Hilfsfunktion für das Instanzformular. Sie ändert dessen aktuelle Auswahl; anschließend muss der Benutzer übernehmen. Die Kachel verwendet ausschließlich `requestAction('Refresh', true)`.
+`UGNAS_SelectVariables` ist eine Hilfsfunktion für das Instanzformular. Sie ändert dessen aktuelle Auswahl; anschließend muss der Benutzer übernehmen. Die Kachel verwendet `Refresh` für die Aktualisierung und `SetTileMetricVisibility` für die gespeicherte Sichtbarkeit pro zusätzlichem Messwert.
 
 ## Struktur
 
