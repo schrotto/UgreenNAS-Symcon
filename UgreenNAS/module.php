@@ -271,7 +271,9 @@ class UgreenNAS extends IPSModuleStrict
     {
         if ($Ident === 'SetTileMetricVisibility' && $this->ReadPropertyBoolean('TileEnabled')
             && is_array($Value) && is_string($Value['id'] ?? null) && is_bool($Value['visible'] ?? null)
-            && UgosTelemetry::isAdditionalMetric($Value['id']) && isset($this->catalog()[$Value['id']])) {
+            && (in_array($Value['id'], UgosTelemetry::PRIMARY_METRIC_IDS, true)
+                || UgosTelemetry::isAdditionalMetric($Value['id']))
+            && isset($this->catalog()[$Value['id']])) {
             $hidden = $this->hiddenTileMetrics();
             if ($Value['visible']) {
                 $hidden = array_values(array_diff($hidden, [$Value['id']]));
@@ -479,8 +481,13 @@ class UgreenNAS extends IPSModuleStrict
     private function payload(): string
     {
         $s = $this->snapshot();
+        $catalog = $this->catalog();
+        $primaryMetrics = [];
+        foreach (UgosTelemetry::PRIMARY_METRIC_IDS as $ident) {
+            $primaryMetrics[] = ['id' => $ident, 'name' => $catalog[$ident]['name']];
+        }
         $extraMetrics = [];
-        foreach ($this->catalog() as $ident => $metric) {
+        foreach ($catalog as $ident => $metric) {
             if (UgosTelemetry::isAdditionalMetric($ident)) {
                 $metric['value'] = $s['metrics'][$ident]['value'] ?? null;
                 $extraMetrics[] = $metric;
@@ -504,7 +511,7 @@ class UgreenNAS extends IPSModuleStrict
             }
         }
         return json_encode(['enabled' => $enabled, 'fresh' => $fresh, 'data' => $s, 'alerts' => $alerts,
-            'extraMetrics' => $extraMetrics, 'hiddenTileMetrics' => $this->hiddenTileMetrics(),
+            'primaryMetrics' => $primaryMetrics, 'extraMetrics' => $extraMetrics, 'hiddenTileMetrics' => $this->hiddenTileMetrics(),
             'diagnostic' => $this->ReadAttributeString('Diagnostic'), 'now' => time(),
             'staleAfter' => max(45, $this->ReadPropertyInteger('Interval') * 2),
             'nextAllowed' => (int) $this->GetBuffer('NextAllowed'),

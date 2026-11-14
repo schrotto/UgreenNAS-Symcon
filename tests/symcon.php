@@ -163,8 +163,19 @@ verify($tileData['hiddenTileMetrics'] === ['LANSend'], 'Kachelauswahl bleibt nac
 $module->RequestAction('SetTileMetricVisibility', ['id' => 'LANSend', 'visible' => true]);
 $tileData = json_decode((new ReflectionMethod($module, 'payload'))->invoke($module), true);
 verify($tileData['hiddenTileMetrics'] === [], 'Ausgeblendeter Wert lässt sich gezielt wieder einblenden');
+foreach (['CPU', 'RAM', 'CPUTemperature'] as $metricId) {
+    $module->RequestAction('SetTileMetricVisibility', ['id' => $metricId, 'visible' => false]);
+}
+$tileData = json_decode((new ReflectionMethod($module, 'payload'))->invoke($module), true);
+verify(array_column($tileData['primaryMetrics'], 'id') === ['CPU', 'RAM', 'CPUTemperature']
+    && $tileData['hiddenTileMetrics'] === ['CPU', 'RAM', 'CPUTemperature'],
+    'Alle drei Hauptwerte sind einzeln auswählbar und ihre Einstellungen werden gespeichert');
+$module->RequestAction('SetTileMetricVisibility', ['id' => 'RAM', 'visible' => true]);
+IPS_ApplyChanges($id);
+$tileData = json_decode((new ReflectionMethod($module, 'payload'))->invoke($module), true);
+verify($tileData['hiddenTileMetrics'] === ['CPU', 'CPUTemperature'], 'Einblenden von RAM ändert nur dessen Sichtbarkeit');
 try {
-    $module->RequestAction('SetTileMetricVisibility', ['id' => 'CPU', 'visible' => false]);
+    $module->RequestAction('SetTileMetricVisibility', ['id' => 'Uptime', 'visible' => false]);
     throw new RuntimeException('Fremder Ident akzeptiert');
 } catch (InvalidArgumentException $e) {
     verify(true, 'Kachelauswahl akzeptiert nur die freigegebenen Messwert-Idents');

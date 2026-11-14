@@ -40,6 +40,24 @@ const path=require('path');
  check(!(await send.isChecked())&&await sendCard.count()===0,'Gespeicherte Auswahl hält bei Live-Updates');
  await send.check();
  check(await sendCard.isVisible(),'Messwert wieder eingeblendet');
+ for(const id of ['CPU','RAM','CPUTemperature']){
+  const checkbox=page.locator('#metricOptions input[data-metric-id="'+id+'"]');
+  const card=page.locator('#primaryMetrics [data-metric-id="'+id+'"]');
+  await checkbox.uncheck();
+  check(await card.isHidden()&&await page.locator('#primaryMetrics .card:visible').count()===2,id+' einzeln ausgeblendet');
+  p=structuredClone(original);p.hiddenTileMetrics=[id];await feed(p);
+  check(await card.isHidden()&&!(await checkbox.isChecked()),id+' bleibt nach einem Live-Update ausgeblendet');
+  await checkbox.check();
+  check(await card.isVisible(),id+' wieder eingeblendet');
+ }
+ p=structuredClone(original);
+ p.extraMetrics=[];
+ p.hiddenTileMetrics=['CPU','RAM','CPUTemperature'];
+ await feed(p);
+ check(await page.locator('#primaryMetrics').isHidden()&&await page.locator('#metricSettings summary').isVisible(),
+  'Messwertauswahl bleibt erreichbar, wenn alle Hauptwerte ausgeblendet sind und Zusatzdaten fehlen');
+ await page.locator('#metricOptions input[data-metric-id="CPU"]').check();
+ check(await page.locator('#primaryMetrics [data-metric-id="CPU"]').isVisible(),'Hauptwert lässt sich aus leerer Anzeige wiederherstellen');
  p=structuredClone(original);p.fresh=false;await feed(p);
  check(await page.locator('#state').textContent()==='Daten veraltet','Veraltete Daten werden markiert');
  p=structuredClone(original);p.enabled=false;await feed(p);

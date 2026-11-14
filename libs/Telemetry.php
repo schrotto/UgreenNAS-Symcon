@@ -3,6 +3,8 @@ declare(strict_types=1);
 
 final class UgosTelemetry
 {
+    public const PRIMARY_METRIC_IDS = ['CPU', 'RAM', 'CPUTemperature'];
+
     public static function number(mixed $value, float $min = 0, float $max = PHP_FLOAT_MAX): ?float
     {
         if (is_bool($value) || !is_numeric($value)) {

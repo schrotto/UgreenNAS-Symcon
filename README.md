@@ -1,6 +1,6 @@
 # UGREEN NAS Monitoring für IP-Symcon
 
-Version **0.6, Build 6 – Testversion**, Stand 14.11.2026.
+Version **0.7, Build 7 – Testversion**, Stand 14.11.2026.
 
 Lokales Monitoring für UGREEN-NAS-Geräte mit UGOS Pro über deren Webschnittstelle. Es sind keine SSH-Verbindung, kein Docker-Container und kein Agent auf der NAS erforderlich. Die Bibliothek ist für IP-Symcon **ab 8.1** vorbereitet und verwendet `IPSModuleStrict` und das native HTML-SDK. Die tatsächlich eingesetzte Symcon-Version wurde noch nicht mitgeteilt.
 
@@ -42,9 +42,13 @@ Für die Installation über **Module Control → Hinzufügen** die Repository-Ad
 
 Anmeldung mit RSA-Passwortverschlüsselung, Sitzungstoken und Cookies erfolgt automatisch. Die notwendige Freigabe eines neuen Clients bei **Zwei-Faktor-Anmeldung wird noch nicht unterstützt**. Ein solches Konto liefert eine Diagnose; die Zwei-Faktor-Prüfung wird nicht umgangen. Für produktive Nutzung mit diesem Konto muss der Freigabeablauf zunächst ergänzt werden.
 
+## Änderungen in Build 7
+
+Über **Messwerte auswählen** in der Kachel lassen sich CPU-Auslastung, RAM-Auslastung und CPU-Temperatur ebenso einzeln ein- und ausblenden wie die zusätzlichen Messwerte. Die Auswahl wird pro Symcon-Instanz gespeichert. Das Menü bleibt erreichbar, wenn alle Hauptwerte ausgeblendet sind.
+
 ## Änderungen in Build 6
 
-Unter **Zusätzliche Messwerte → Messwerte auswählen** lässt sich jeder zusätzliche LAN-, RAM-, Volume- und Laufwerkswert einzeln ein- oder ausblenden. Die Auswahl wird für die Symcon-Instanz gespeichert. Die Messwerte erscheinen auch dann in der Kachel, wenn in der Variablenverwaltung keine Statusvariablen aktiviert wurden.
+Über **Messwerte auswählen** in der Kachel lässt sich jeder zusätzliche LAN-, RAM-, Volume- und Laufwerkswert einzeln ein- oder ausblenden. Die Auswahl wird für die Symcon-Instanz gespeichert. Die Messwerte erscheinen auch dann in der Kachel, wenn in der Variablenverwaltung keine Statusvariablen aktiviert wurden.
 
 Modulvariablen verwenden native Symcon-Wertdarstellungen. Bei der Umstellung bestehender Variablen werden ihre IDs beibehalten. Benutzerdefinierte Legacy-Darstellungen an Modulvariablen werden durch die nativen Vorgaben ersetzt. Vorhandene native Benutzerdarstellungen haben Vorrang. Die automatische Skalierung verwendet kB, MB, GB und bei größeren Werten TB oder PB, bei LAN jeweils pro Sekunde. Skripte und Archive erhalten dieselben Rohwerte in Byte oder Byte pro Sekunde. [Symcon-Dokumentation zur Wertdarstellung](https://www.symcon.de/en/service/documentation/developer-area/sdk-tools/sdk-php/presentations/value-presentation/)
 
@@ -111,7 +115,7 @@ Fehlende Messwerte überschreiben bestehende Werte nicht mit `0`. Für Automatio
 
 CPU, RAM und CPU-Temperatur bilden die Hauptanzeige. Darunter folgen die einzeln auswählbaren zusätzlichen Messwerte, Speicherpools mit Volume-Belegungsbalken, Laufwerke und Kühlung. Warnschwellen bleiben sichtbar. Diagnose ist aufklappbar und bleibt bei Updates geöffnet. Lange Namen werden umgebrochen. Kleine Kacheln verwenden eine vertikale Anordnung und vertikales Scrollen. Die Kachel steuert keinen Vollbildmodus der Host-App.
 
-Konfigurierbar sind Anzeigename, Farbschema, Akzentfarbe, kompakte Abstände, Pools, Laufwerke, Lüfter und die Aktualisieren-Schaltfläche. Das Hauptdashboard bleibt sichtbar. Keine externen Schriften, Bilder, Bibliotheken oder Cloud-Dienste werden geladen.
+Konfigurierbar sind Anzeigename, Farbschema, Akzentfarbe, kompakte Abstände, Pools, Laufwerke, Lüfter und die Aktualisieren-Schaltfläche. Die drei Hauptwerte lassen sich einzeln ausblenden. Keine externen Schriften, Bilder, Bibliotheken oder Cloud-Dienste werden geladen.
 
 Die Kachel zeigt Daten nach Ablauf von `max(45 Sekunden, 2 × Intervall)` als veraltet an. Beim ersten Laden erfolgt eine vollständige Initialisierung. Messwerte aus dem letzten erfolgreichen Poll bleiben bei Fehlern sichtbar, werden aber als veraltet markiert. Nach Konfigurationsänderungen und Reaktivierung ist eine neue Messung erforderlich, bevor Daten wieder als aktuell gelten.
 
@@ -135,7 +139,7 @@ Verbindungsdetails, Zugangsdaten, Sitzungstoken und vollständige Geräteantwort
 $erfolgreich = UGNAS_Update(12345);
 ```
 
-`UGNAS_SelectVariables` ist eine Hilfsfunktion für das Instanzformular. Sie ändert dessen aktuelle Auswahl; anschließend muss der Benutzer übernehmen. Die Kachel verwendet `Refresh` für die Aktualisierung und `SetTileMetricVisibility` für die gespeicherte Sichtbarkeit pro zusätzlichem Messwert.
+`UGNAS_SelectVariables` ist eine Hilfsfunktion für das Instanzformular. Sie ändert dessen aktuelle Auswahl; anschließend muss der Benutzer übernehmen. Die Kachel verwendet `Refresh` für die Aktualisierung und `SetTileMetricVisibility` für die gespeicherte Sichtbarkeit pro auswählbarem Messwert.
 
 ## Struktur
 
