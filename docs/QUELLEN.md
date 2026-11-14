@@ -31,3 +31,10 @@ Der Schluss, dass weitere DXP-Modelle mit gleichem UGOS-API-Format angebunden we
 ## Ergänzung Build 2
 
 [UGREEN Storage Pool](https://support.ugnas.com/detail/article/en-US/305) beschreibt die Zuweisung von Poolkapazität an Speicherbereiche. Die beobachteten `volumes[].total`- und `volumes[].used`-Felder sind im oben genannten Home-Assistant-Client dokumentiert. Der [UGOS-Dashboard-Client](https://github.com/runlevel1977-del/UgreenNASAdmin/blob/main/ugreen_app/ugos_api_dashboard.py) unterscheidet ebenfalls Poolzuweisung und Volume-Belegung. Die korrigierte Anzeige aggregiert ausschließlich vollständige Volume-Werte.
+
+## Messwerte in Build 5
+
+- LAN-Gesamtraten in Byte pro Sekunde aus dem ersten Eintrag der Netzwerkstatistik. [Home-Assistant-Integration, Netzwerkstatistik](https://github.com/Tom-Bom-badil/home-assistant_ugreen-nas/blob/main/custom_components/ugreen/entities.py#L667-L710)
+- Freier RAM und RAM-Cache aus der Speicherstatistik in Byte. [Home-Assistant-Integration, RAM](https://github.com/Tom-Bom-badil/home-assistant_ugreen-nas/blob/main/custom_components/ugreen/entities.py#L586-L607)
+- Dateisystemseitig verfügbarer Speicher je Volume in Byte. [Home-Assistant-Integration, Volume-Daten](https://github.com/Tom-Bom-badil/home-assistant_ugreen-nas/blob/main/custom_components/ugreen/entities.py#L1434-L1454)
+- Betriebsstunden aus der Laufwerksliste. [Home-Assistant-Integration, Laufwerksbetriebsstunden](https://github.com/Tom-Bom-badil/home-assistant_ugreen-nas/blob/main/custom_components/ugreen/entities.py#L1640-L1650)

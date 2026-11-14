@@ -12,8 +12,15 @@
         },
         {
           "type": "ValidationTextBox",
-          "name": "BaseURL",
-          "caption": "NAS-Adresse, z. B. http://192.168.1.20:9999"
+          "name": "Host",
+          "caption": "NAS-Adresse, z. B. 192.168.1.20 oder nas.local"
+        },
+        {
+          "type": "NumberSpinner",
+          "name": "Port",
+          "caption": "HTTP-Port",
+          "minimum": 1,
+          "maximum": 65535
         },
         {
           "type": "ValidationTextBox",
@@ -262,8 +269,8 @@
     },
     {
       "type": "Button",
-      "caption": "Verbindung testen / jetzt aktualisieren",
-      "onClick": "echo UGNAS_Update($id) ? 'Abfrage erfolgreich. Erkannte Messwerte stehen in der Variablenverwaltung bereit.' : 'Keine Aktualisierung. Diagnose prüfen; gegebenenfalls Wiederholsperre abwarten.';"
+      "caption": "Verbindung testen",
+      "onClick": "if (IPS_HasChanges($id)) { echo 'Bitte zuerst die Einstellungen übernehmen.'; } else { echo UGNAS_TestConnection($id); }"
     }
   ],
   "status": [

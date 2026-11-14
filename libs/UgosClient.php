@@ -9,10 +9,14 @@ final class UgosClient
     private string $token;
     private array $cookies = [];
     private float $deadline;
+    private bool $httpResponded = false;
+    private bool $authenticated = false;
+    private bool $loginStarted = false;
     private const READ_PATHS = [
         '/ugreen/v1/sysinfo/machine/common',
         '/ugreen/v1/taskmgr/stat/get_all',
         '/ugreen/v1/taskmgr/stat/overview',
+        '/ugreen/v1/taskmgr/stat/net',
         '/ugreen/v1/storage/pool/list',
         '/ugreen/v2/storage/disk/list'
     ];
@@ -50,6 +54,19 @@ final class UgosClient
         return json_encode(['token' => $this->token, 'cookies' => $this->cookies], JSON_THROW_ON_ERROR);
     }
 
+    public function connectionSummary(): string
+    {
+        if (!$this->httpResponded) {
+            return 'HTTP-Verbindung: keine Antwort.';
+        }
+        $login = match (true) {
+            $this->authenticated => 'erfolgreich',
+            $this->loginStarted => 'nicht abgeschlossen',
+            default => 'Sitzung nicht bestätigt'
+        };
+        return 'HTTP-Verbindung: Antwort erhalten. UGOS-Anmeldung: ' . $login . '.';
+    }
+
     public function read(string $path): array
     {
         if (!in_array($path, self::READ_PATHS, true)) {
@@ -75,6 +92,7 @@ final class UgosClient
     {
         [$json] = $this->request('GET', $path . '?token=' . rawurlencode($this->token));
         $this->checkCode($json);
+        $this->authenticated = true;
         if (!is_array($json['data'] ?? null)) {
             throw new UgosApiException('UGOS liefert keine auswertbaren Daten.');
         }
@@ -83,6 +101,8 @@ final class UgosClient
 
     private function login(): void
     {
+        $this->loginStarted = true;
+        $this->authenticated = false;
         if ($this->username === '' || $this->password === '') {
             throw new UgosApiException('Benutzername oder Passwort fehlt.', 1003);
         }
@@ -121,6 +141,7 @@ final class UgosClient
         }
         $this->token = $token;
         $this->cookies['token'] = rawurlencode($token);
+        $this->authenticated = true;
     }
 
     private function checkCode(array $json): void
@@ -162,7 +183,7 @@ final class UgosClient
             CURLOPT_CONNECTTIMEOUT_MS => min(4000, $remaining),
             CURLOPT_TIMEOUT_MS => min($this->timeout * 1000, $remaining),
             CURLOPT_HTTPHEADER => ['Accept: application/json', 'Content-Type: application/json'],
-            CURLOPT_USERAGENT => 'Symcon-UGREEN-Monitor/0.3',
+            CURLOPT_USERAGENT => 'Symcon-UGREEN-Monitor/0.5',
             CURLOPT_COOKIE => implode('; ', $cookies),
             CURLOPT_HEADERFUNCTION => function ($handle, string $line) use (&$headers): int {
                 $length = strlen($line);
@@ -190,10 +211,17 @@ final class UgosClient
         }
         $ok = curl_exec($ch);
         $http = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+        $this->httpResponded = $this->httpResponded || $http > 0;
         $errno = curl_errno($ch);
         curl_close($ch);
         if ($ok === false) {
-            throw new UgosApiException($oversize ? 'UGOS-Antwort überschreitet 2 MiB.' : 'NAS-Verbindung fehlgeschlagen (cURL ' . $errno . '). HTTP-Adresse, Port und Erreichbarkeit prüfen.');
+            $message = match ($errno) {
+                CURLE_COULDNT_RESOLVE_HOST => 'NAS-Hostname konnte nicht aufgelöst werden.',
+                CURLE_COULDNT_CONNECT => 'Verbindung zum NAS-Port konnte nicht aufgebaut werden.',
+                CURLE_OPERATION_TIMEDOUT => 'Zeitlimit für die NAS-Anfrage erreicht.',
+                default => 'HTTP-Anfrage fehlgeschlagen.'
+            };
+            throw new UgosApiException($oversize ? 'UGOS-Antwort überschreitet 2 MiB.' : $message . ' (cURL ' . $errno . ')');
         }
         if ($http !== 200) {
             throw new UgosApiException('NAS antwortet mit HTTP ' . $http . '.', $http);

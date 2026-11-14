@@ -14,23 +14,67 @@ class UgreenNAS extends IPSModuleStrict
             'Compact' => false] as $key => $default) {
             $this->RegisterPropertyBoolean($key, $default);
         }
-        foreach (['BaseURL' => 'http://:9999', 'Username' => '', 'Password' => '',
+        foreach (['Host' => '', 'Username' => '', 'Password' => '',
             'Variables' => '[]', 'Theme' => 'auto', 'Title' => 'UGREEN NAS'] as $key => $default) {
             $this->RegisterPropertyString($key, $default);
         }
-        foreach (['Interval' => 60, 'Timeout' => 8, 'Accent' => 0x52D6B0,
+        foreach (['Port' => 9999, 'Interval' => 60, 'Timeout' => 8, 'Accent' => 0x52D6B0,
             'CPUWarning' => 90, 'TemperatureWarning' => 80, 'StorageWarning' => 85] as $key => $default) {
             $this->RegisterPropertyInteger($key, $default);
         }
         $this->RegisterAttributeString('Snapshot', '{}');
-        // Nur für Konfigurationskompatibilität mit Build 1/2 registriert;
-        // keine Formularfelder und keine Verwendung bei HTTP-Anfragen.
-        $this->RegisterPropertyBoolean('VerifyTLS', true);
-        $this->RegisterPropertyString('CAFile', '');
         $this->RegisterAttributeString('Catalog', '{}');
         $this->RegisterAttributeString('Source', '');
         $this->RegisterAttributeString('Diagnostic', 'Noch keine Abfrage durchgeführt.');
         $this->RegisterTimer('Poll', 0, 'UGNAS_Update($_IPS["TARGET"]);');
+    }
+
+    public function Migrate(string $JSONData): string
+    {
+        parent::Migrate($JSONData);
+        $data = json_decode($JSONData);
+        $config = $data->configuration ?? null;
+        if (!is_object($config) || !isset($config->BaseURL)) {
+            return '';
+        }
+        $oldUrl = $config->BaseURL;
+        if (empty($config->Host) && is_string($oldUrl)) {
+            $parts = parse_url($oldUrl);
+            if (is_array($parts) && ($parts['scheme'] ?? '') === 'http' && !empty($parts['host'])
+                && !isset($parts['user']) && !isset($parts['pass'])
+                && !isset($parts['query']) && !isset($parts['fragment'])
+                && in_array($parts['path'] ?? '', ['', '/'], true)) {
+                $config->Host = trim($parts['host'], '[]');
+                // Ohne expliziten Port nutzte die frühere HTTP-Adresse Port 80.
+                $config->Port = $parts['port'] ?? 80;
+                $username = $config->Username ?? '';
+                if (($data->attributes->Source ?? '') === hash('sha256', $oldUrl . '|' . $username)) {
+                    $address = $parts['host'] . ':' . $config->Port;
+                    $data->attributes->Source = hash('sha256', 'http://' . $address . '|' . $username);
+                }
+            }
+        }
+        unset($config->BaseURL, $config->VerifyTLS, $config->CAFile);
+        return json_encode($data, JSON_THROW_ON_ERROR);
+    }
+
+    private function baseUrl(): string
+    {
+        $host = trim($this->ReadPropertyString('Host'));
+        $port = $this->ReadPropertyInteger('Port');
+        if ($port < 1 || $port > 65535) {
+            throw new InvalidArgumentException('HTTP-Port muss zwischen 1 und 65535 liegen.');
+        }
+        $ipv6 = $host;
+        if (str_starts_with($host, '[') && str_ends_with($host, ']')) {
+            $ipv6 = substr($host, 1, -1);
+        }
+        if (filter_var($ipv6, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) {
+            $host = '[' . $ipv6 . ']';
+        } elseif ($host === '' || !filter_var($host, FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME)) {
+            throw new InvalidArgumentException('NAS-Adresse als IP-Adresse oder Hostname ohne Protokoll oder Port eingeben.');
+        }
+        return 'http://' . $host . ':' . $port;
     }
 
     public function ApplyChanges(): void
@@ -38,12 +82,6 @@ class UgreenNAS extends IPSModuleStrict
         parent::ApplyChanges();
         $this->SetTimerInterval('Poll', 0);
         $this->SetVisualizationType($this->ReadPropertyBoolean('TileEnabled') ? 1 : 0);
-        $source = hash('sha256', $this->ReadPropertyString('BaseURL') . '|' . $this->ReadPropertyString('Username'));
-        if ($source !== $this->ReadAttributeString('Source')) {
-            $this->WriteAttributeString('Snapshot', '{}');
-            $this->WriteAttributeString('Catalog', '{}');
-            $this->WriteAttributeString('Source', $source);
-        }
         // Konfigurationsänderungen erhalten keine alte Sitzung.
         $this->SetBuffer('Session', '');
         $this->SetBuffer('NextAllowed', '0');
@@ -52,6 +90,15 @@ class UgreenNAS extends IPSModuleStrict
         $this->SetBuffer('Current', '0');
         $this->SetBuffer('FormRows', '');
         try {
+            $source = '';
+            if ($this->ReadPropertyString('Host') !== '' || $this->ReadPropertyBoolean('Enabled')) {
+                $source = hash('sha256', $this->baseUrl() . '|' . $this->ReadPropertyString('Username'));
+            }
+            if ($source !== $this->ReadAttributeString('Source')) {
+                $this->WriteAttributeString('Snapshot', '{}');
+                $this->WriteAttributeString('Catalog', '{}');
+                $this->WriteAttributeString('Source', $source);
+            }
             $this->configureVariables();
             $this->validateConfiguration();
             if (!$this->ReadPropertyBoolean('Enabled')) {
@@ -97,29 +144,40 @@ class UgreenNAS extends IPSModuleStrict
         $this->client(); // URL-Validierung ohne Netzwerkzugriff
     }
 
-    private function client(): UgosClient
+    private function client(bool $freshLogin = false): UgosClient
     {
-        return new UgosClient($this->ReadPropertyString('BaseURL'), $this->ReadPropertyString('Username'),
+        return new UgosClient($this->baseUrl(), $this->ReadPropertyString('Username'),
             $this->ReadPropertyString('Password'),
-            $this->ReadPropertyInteger('Timeout'), $this->GetBuffer('Session'));
+            $this->ReadPropertyInteger('Timeout'), $freshLogin ? '' : $this->GetBuffer('Session'));
     }
 
     public function Update(): bool
     {
+        return $this->poll(false)[0];
+    }
+
+    public function TestConnection(): string
+    {
+        return $this->poll(true)[1];
+    }
+
+    private function poll(bool $testLogin): array
+    {
         if (!$this->ReadPropertyBoolean('Enabled')) {
-            return false;
+            return [false, 'Überwachung aktivieren und Einstellungen übernehmen.'];
         }
         if (!IPS_SemaphoreEnter('UGNAS_' . $this->InstanceID, 1)) {
-            return false;
+            return [false, 'Eine NAS-Abfrage läuft bereits.'];
         }
+        $client = null;
         try {
-            if (time() < (int) $this->GetBuffer('NextAllowed') || time() - (int) $this->GetBuffer('LastAttempt') < 5) {
-                $this->publish();
-                return false;
+            $wait = max((int) $this->GetBuffer('NextAllowed'), (int) $this->GetBuffer('LastAttempt') + 5) - time();
+            if ($wait > 0) {
+                return [false, 'Nächster Test in ' . $wait . ' s. Letzte Diagnose: ' . $this->ReadAttributeString('Diagnostic')];
             }
             $this->SetBuffer('LastAttempt', (string) time());
             $this->validateConfiguration();
-            $client = $this->client();
+            $client = $this->client($testLogin);
             $machine = $client->read('/ugreen/v1/sysinfo/machine/common');
             try {
                 $stats = $client->read('/ugreen/v1/taskmgr/stat/get_all');
@@ -135,10 +193,10 @@ class UgreenNAS extends IPSModuleStrict
                 throw new RuntimeException('Unbekanntes UGOS-Datenformat. Keine aktuellen Messwerte übernommen.');
             }
             $warnings = [];
-            $optional = function (string $path, string $label) use ($client, &$warnings): ?array {
+            $optional = function (string $path, string $label, string $listKey = 'result') use ($client, &$warnings): ?array {
                 try {
                     $result = $client->read($path);
-                    if (!isset($result['result']) || !is_array($result['result'])) {
+                    if (!is_array($result[$listKey] ?? null)) {
                         throw new RuntimeException('Unbekanntes Listenformat.');
                     }
                     return $result;
@@ -152,7 +210,8 @@ class UgreenNAS extends IPSModuleStrict
             };
             $pools = $optional('/ugreen/v1/storage/pool/list', 'Speicherpools');
             $disks = $optional('/ugreen/v2/storage/disk/list', 'Laufwerke');
-            $snapshot = UgosTelemetry::normalize($machine, $stats, $pools, $disks);
+            $network = $optional('/ugreen/v1/taskmgr/stat/net', 'LAN-Statistik', 'series');
+            $snapshot = UgosTelemetry::normalize($machine, $stats, $pools, $disks, $network);
             $previousCatalog = $this->catalog();
             $snapshot['timestamp'] = time();
             $snapshot['warnings'] = $warnings;
@@ -175,9 +234,15 @@ class UgreenNAS extends IPSModuleStrict
             $this->SetBuffer('NextAllowed', '0');
             $this->SetBuffer('Current', '1');
             $this->SetStatus(102);
-            $this->WriteAttributeString('Diagnostic', $warnings === [] ? 'Abfrage erfolgreich.' : implode(' ', $warnings));
             $this->writeValues($snapshot['metrics']);
-            return true;
+            $count = count(array_filter($snapshot['metrics'], static fn ($metric) => $metric['value'] !== null));
+            $report = $client->connectionSummary() . ' Datenabruf: ' . $count . ' Messwerte, ';
+            $report .= count($snapshot['pools']) . ' Speicherpools und ' . count($snapshot['disks']) . ' Laufwerke erkannt.';
+            if ($warnings !== []) {
+                $report .= ' Teilabruf: ' . implode(' ', $warnings);
+            }
+            $this->WriteAttributeString('Diagnostic', $report);
+            return [true, $report];
         } catch (Throwable $e) {
             $this->SetBuffer('Session', '');
             $failures = min(6, (int) $this->GetBuffer('Failures') + 1);
@@ -185,9 +250,14 @@ class UgreenNAS extends IPSModuleStrict
             $delay = $e instanceof UgosApiException && $e->getCode() === 1003 ? 900 : min(900, 15 * (2 ** $failures));
             $this->SetBuffer('NextAllowed', (string) (time() + $delay));
             $this->SetStatus(202);
-            $this->WriteAttributeString('Diagnostic', $e->getMessage() . ' Nächster Versuch frühestens in ' . $delay . ' s.');
+            $report = $e->getMessage();
+            if ($client !== null) {
+                $report = $client->connectionSummary() . ' ' . $report;
+            }
+            $report .= ' Nächster Versuch frühestens in ' . $delay . ' s.';
+            $this->WriteAttributeString('Diagnostic', $report);
             $this->markOffline();
-            return false;
+            return [false, $report];
         } finally {
             $this->SetTimerInterval('Poll', max(15, $this->ReadPropertyInteger('Interval')) * 1000);
             IPS_SemaphoreLeave('UGNAS_' . $this->InstanceID);
@@ -267,23 +337,31 @@ class UgreenNAS extends IPSModuleStrict
         }
     }
 
+    private function profileName(array $metric): string
+    {
+        return match ($metric['unit']) {
+            '°C' => '~Temperature',
+            '%' => 'UGNAS.Percent',
+            'rpm' => 'UGNAS.RPM',
+            's' => 'UGNAS.Seconds',
+            'B' => 'UGNAS.Bytes',
+            'B/s' => 'UGNAS.BytesPerSecond',
+            'h' => 'UGNAS.Hours',
+            default => $metric['type'] === 0 ? 'UGNAS.Connection' : ''
+        };
+    }
+
     private function profile(array $metric): string
     {
-        if ($metric['unit'] === '°C') {
-            return '~Temperature';
-        }
-        $name = match ($metric['unit']) { '%' => 'UGNAS.Percent', 'rpm' => 'UGNAS.RPM', 's' => 'UGNAS.Seconds', default => '' };
-        if ($name === '' && $metric['type'] === 0) {
-            $name = 'UGNAS.Connection';
-        }
-        if ($name !== '' && !IPS_VariableProfileExists($name)) {
+        $name = $this->profileName($metric);
+        if ($name !== '' && $name !== '~Temperature' && !IPS_VariableProfileExists($name)) {
             IPS_CreateVariableProfile($name, $metric['type']);
             if ($metric['type'] === 0) {
                 IPS_SetVariableProfileAssociation($name, 0, 'Offline', '', 0xD97B69);
                 IPS_SetVariableProfileAssociation($name, 1, 'Online', '', 0x52D6B0);
             } else {
                 IPS_SetVariableProfileText($name, '', ' ' . $metric['unit']);
-                IPS_SetVariableProfileDigits($name, $metric['type'] === 2 ? 1 : 0);
+                IPS_SetVariableProfileDigits($name, $metric['type'] === 2 && $metric['unit'] !== 'B' ? 1 : 0);
             }
         }
         return $name;
@@ -413,7 +491,7 @@ class UgreenNAS extends IPSModuleStrict
             $row = $rows[$id] ?? ['Ident' => $id, 'Enabled' => false, 'Name' => $metric['name'], 'Target' => 0, 'Position' => count($rows) * 10];
             $row['Type'] = ['Boolean', 'Integer', 'Float', 'String'][$metric['type']];
             $row['Unit'] = $metric['unit'];
-            $row['Representation'] = match ($metric['unit']) { '%' => 'UGNAS.Percent', '°C' => '~Temperature', 'rpm' => 'UGNAS.RPM', 's' => 'UGNAS.Seconds', default => $metric['type'] === 0 ? 'UGNAS.Connection' : 'Standard' };
+            $row['Representation'] = $this->profileName($metric) ?: 'Standard';
             $rows[$id] = $row;
         }
         return array_values($rows);

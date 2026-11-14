@@ -1,6 +1,6 @@
-# Testbericht – 0.3, Build 3
+# Testbericht – 0.5, Build 5
 
-Stand: 31.10.2026. Die folgenden Prüfungen wurden tatsächlich ausgeführt. Bei den Entwicklerprüfungen bestand **keine Verbindung zu einer echten NAS oder einem Symcon-Dienst**. Vom Benutzer wurden im ersten Gerätetest korrekte CPU-, RAM-, Lüfter- und Festplattentemperaturwerte gemeldet. Die beiden Korrekturen in Build 2 sind am Gerät noch zu bestätigen.
+Stand 14.11.2026. Die folgenden Prüfungen wurden tatsächlich ausgeführt. Bei den Entwicklerprüfungen bestand **keine Verbindung zu einer echten NAS oder einem Symcon-Dienst**. Vom Benutzer wurden im ersten Gerätetest korrekte CPU-, RAM-, Lüfter- und Festplattentemperaturwerte gemeldet. Die beiden Korrekturen in Build 2 sind am Gerät noch zu bestätigen.
 
 ## Ergebnisse
 
@@ -9,10 +9,10 @@ Stand: 31.10.2026. Die folgenden Prüfungen wurden tatsächlich ausgeführt. Bei
 | PHP-Syntax | Sämtliche PHP-Dateien ohne Syntaxfehler unter PHP CLI 8.3.6 | Kein Beweis für Symcon-Laufzeit oder Gerätekompatibilität |
 | JSON-Syntax | Alle JSON-Dateien gültig | Inhalt zusätzlich wie unten geprüft |
 | `module.json` | Gegen offizielles `moduleSchema.json` bestanden | Schema-Abruf vom 31.10.2026 |
-| `form.json` | Gegen offizielles `formSchema.json` bestanden | Kein echter Instanzeditor-/Konsolentest |
+| `form.json` | JSON gültig. Geänderte Felder und Button anhand der Symcon-Dokumentation geprüft | Kein echter Instanzeditor-/Konsolentest |
 | `library.json` | Alle Felder außer Versions-Enum schema-konform | Öffentliches Schema führt weiterhin nur Versionen bis 6.2; Mindestversion 8.1 deshalb formal vom alten Enum abgelehnt. Die Bibliothek gibt ihre tatsächliche Mindestversion an; das Schema wurde nicht verändert. |
-| Daten-/Clienttests | 41 Prüfungen bestanden | Synthetische Fixtures und echter lokaler HTTP-Testserver |
-| SymconStubs | 35 Prüfungen bestanden | Unveränderte offizielle Stubs, kein echter Kernel |
+| Daten-/Clienttests | 47 Prüfungen bestanden | Synthetische Fixtures und echter lokaler HTTP-Testserver |
+| SymconStubs | 51 Prüfungen bestanden | Unveränderte offizielle Stubs, kein echter Kernel |
 | Gerenderter Browser | 33 Prüfungen bestanden | Headless Chromium/Brave mit Playwright, kein Symcon-Webclient |
 | Sichtkontrolle | Dunkel-, Hell- und Smartphone-Vorschau geöffnet und geprüft | Testdaten, keine Live-Messwerte |
 | ZIP | CRC und Bytegleichheit mit allen enthaltenen Workspace-Dateien geprüft | Installationsabnahme am Zielsystem noch erforderlich |
@@ -72,3 +72,11 @@ Vom Benutzer wurde außerdem eine funktionierende Anmeldung über HTTP zurückge
 Nach Entfernung von HTTPS erneut ausgeführt: sämtliche PHP-Syntaxprüfungen, Daten-/HTTP-Clienttests (41 Prüfungen) und unveränderte offizielle SymconStubs (35 Prüfungen). Zusätzlich geprüft: Ablehnung von HTTPS vor Netzwerkzugriff; keine Zertifikats-/CA-Felder im Konfigurationsformular; HTTP-Vorgabe für neue Instanzen; Erhalt einer bestehenden HTTP-Adresse; vollständiger HTTP-Poll auch mit einer alten, ungültigen und nun ignorierten CA-Dateieigenschaft.
 
 Die Modul-HTML ist seit dem bestandenen Browserlauf von Build 2 unverändert; dieser Browserlauf wurde für die reine HTTP-/Formularänderung nicht wiederholt. Es wurden keine zusätzlichen Home-Assistant-Funktionen eingebaut.
+
+## Prüfungen für Build 4
+
+41 Daten- und HTTP-Prüfungen sowie 41 Prüfungen mit SymconStubs sind bestanden. Getestet sind die Übernahme einer gespeicherten HTTP-Adresse mit eigenem Port, IPv6 und Port 80 bei älteren URLs ohne Portangabe, die bestehende Zuordnung von Messdaten sowie die Meldungen für erfolgreiche Anmeldung, verweigerten Login, fehlerhafte Daten und Teilabrufe mit fehlenden Leserechten. Update und Verbindungstest wurden noch nicht auf der echten Symcon-Instanz und NAS ausgeführt.
+
+## Prüfungen für Build 5
+
+47 Daten- und HTTP-Prüfungen sowie 51 Prüfungen mit SymconStubs sind bestanden. Geprüft wurden die LAN-Gesamtraten einschließlich Nullwerten, RAM und Volume-Speicher in Byte, stabile Volume- und Laufwerkszuordnungen, die Anlage und Aktualisierung aller zusätzlichen Variablentypen sowie Teilabrufe bei fehlender LAN-Statistik. Die Messwerte stammen im Test aus synthetischen UGOS-Antworten. Ihre Verfügbarkeit muss noch an der NAS geprüft werden.

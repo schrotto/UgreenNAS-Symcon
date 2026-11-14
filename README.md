@@ -1,14 +1,15 @@
 # UGREEN NAS Monitoring für IP-Symcon
 
-Version **0.3, Build 3 – Testversion**, Stand 31.10.2026.
+Version **0.5, Build 5 – Testversion**, Stand 14.11.2026.
 
 Lokales Monitoring für UGREEN-NAS-Geräte mit UGOS Pro über deren Webschnittstelle. Es sind keine SSH-Verbindung, kein Docker-Container und kein Agent auf der NAS erforderlich. Die Bibliothek ist für IP-Symcon **ab 8.1** vorbereitet und verwendet `IPSModuleStrict` und das native HTML-SDK. Die tatsächlich eingesetzte Symcon-Version wurde noch nicht mitgeteilt.
 
-Referenzanforderung ist ein **DXP8800 Plus mit UGOS Pro 1.20.0.0142**. Weitere DXP-Modelle sollen über dieselben API-Endpunkte funktionieren. Aus dem ersten Gerätetest über HTTP wurden eine erfolgreiche Anmeldung und korrekte CPU-, RAM-, Lüfter- und Festplattentemperaturwerte zurückgemeldet. Auf Benutzerwunsch verwendet Build 3 ausschließlich HTTP im lokalen Netzwerk. Die Korrekturen für Variablenliste und Speicherbelegung aus Build 2 müssen am Gerät noch bestätigt werden. Andere DXP-Modelle wurden noch nicht geprüft. Die UGOS-Schnittstelle ist nicht als stabile öffentliche Monitoring-API zugesichert. Firmwareänderungen können Anpassungen erfordern.
+Referenzanforderung ist ein **DXP8800 Plus mit UGOS Pro 1.20.0.0142**. Weitere DXP-Modelle sollen über dieselben API-Endpunkte funktionieren. Aus dem ersten Gerätetest über HTTP wurden eine erfolgreiche Anmeldung und korrekte CPU-, RAM-, Lüfter- und Festplattentemperaturwerte zurückgemeldet. Der Zugriff erfolgt über HTTP im lokalen Netzwerk. Die Korrekturen für Variablenliste und Speicherbelegung aus Build 2 müssen am Gerät noch bestätigt werden. Andere DXP-Modelle wurden noch nicht geprüft. Die UGOS-Schnittstelle ist nicht als stabile öffentliche Monitoring-API zugesichert. Firmwareänderungen können Anpassungen erfordern.
 
 ## Funktionen
 
 - Verbindung, CPU- und RAM-Auslastung, CPU-Temperatur und Betriebszeit.
+- LAN-Sende- und Empfangsrate, freier RAM, RAM-Cache, verfügbarer Speicher je Volume und Betriebsstunden je Laufwerk.
 - Dynamische Erkennung von CPU-/Gehäuselüftern und deren Drehzahlen.
 - Speicherpools mit tatsächlicher, nach Volume-Kapazität gewichteter Volume-Belegung, RAID-Bezeichnung und unverändertem UGOS-Status.
 - Laufwerke mit Modell, Größe und unverändertem UGOS-Status; Temperaturen nur bei sicherer Zuordnung über den Gerätenamen.
@@ -16,7 +17,7 @@ Referenzanforderung ist ein **DXP8800 Plus mit UGOS Pro 1.20.0.0142**. Weitere D
 - Responsive Dashboard-Kachel in hellem, dunklem oder automatischem Farbschema, mit wählbarer Akzentfarbe und ein-/ausblendbaren Bereichen.
 - Manuelle Aktualisierung aus der Kachel, Live-Aktualisierung, markierte alte Daten und Verbindungsdiagnose.
 
-Die Darstellung von Statuscodes ist bewusst keine zertifizierte SMART-/RAID-Gesundheitsbewertung. Es werden keine SMART-Selbsttests gestartet und keine NAS-Einstellungen verändert. Netzwerkdurchsatz, Docker-Überwachung, detaillierte SMART-Attribute, Push-Nachrichten, Ein-/Ausschalten und Neustarten sind in dieser Version nicht enthalten.
+Die Darstellung von Statuscodes ist bewusst keine zertifizierte SMART-/RAID-Gesundheitsbewertung. Es werden keine SMART-Selbsttests gestartet und keine NAS-Einstellungen verändert. Docker-Überwachung, detaillierte SMART-Attribute, Push-Nachrichten, Ein-/Ausschalten und Neustarten sind in dieser Version nicht enthalten.
 
 ## Installation
 
@@ -29,18 +30,29 @@ Die Darstellung von Statuscodes ist bewusst keine zertifizierte SMART-/RAID-Gesu
 
 ### Module Control
 
-Die Bibliothek besitzt die erforderliche Repository-Struktur. Für die Installation über Module Control muss der Inhalt in einem erreichbaren eigenen Git-Repository liegen, mit `library.json` an der Repository-Wurzel. Anschließend dessen Repository-URL in **Module Control → Hinzufügen** eintragen. Es wurde nichts veröffentlicht oder auf einen externen Server gepusht; eine öffentliche Installations-URL ist daher noch nicht vorhanden.
+Für die Installation über **Module Control → Hinzufügen** die Repository-Adresse `https://github.com/schrotto/UgreenNAS-Symcon` eintragen. Bei bestehender GitHub-Installation die Bibliothek in Module Control aktualisieren. [GitHub-Repository](https://github.com/schrotto/UgreenNAS-Symcon)
 
 ### NAS-Verbindung einrichten
 
-1. NAS-Adresse einschließlich HTTP-Protokoll und API-Port eingeben, üblicherweise `http://NAS-IP:9999`. Benutzerdefinierte Ports können abweichen. Kein `/ugreen` und keinen weiteren Pfad anhängen.
+1. Unter **NAS-Adresse** die IP-Adresse oder den Hostnamen eintragen. Unter **HTTP-Port** den in UGOS eingestellten Port eintragen. Die Vorgabe ist `9999`. Adresse ohne Protokoll, Port und Pfad eingeben.
 2. Einen **lokalen NAS-Benutzer** und dessen Passwort im Instanzformular eintragen. Ein UGREEN-Cloudkonto ist kein Ersatz für das lokale Konto. Das Konto benötigt Leserechte auf die abgefragten System- und Speicherinformationen. Welche Rechte auf der genannten Firmware ausreichen, muss am Gerät geprüft werden; nicht vorsorglich zusätzliche Rechte vergeben.
-3. Den im UGOS-System eingestellten HTTP-Port verwenden. Es gibt keine Zertifikats- oder CA-Einstellungen mehr.
-4. Überwachung aktivieren und **Übernehmen** anklicken. Die erste Erkennung startet nach einer Sekunde; bei Bedarf **Verbindung testen / jetzt aktualisieren** ausführen.
-5. Erkannte Pools, Laufwerke und Lüfter erscheinen automatisch in der bereits geöffneten Variablenliste. Vor einer erfolgreichen Geräteverbindung sind nur die fünf allgemeinen Messwerte bekannt; es werden keine erfundenen Laufwerksplätze angezeigt. Gewünschte Variablen einzeln aktivieren und erneut übernehmen. Ohne Auswahl bleibt es bei **null zusätzlichen Variablen**.
-6. Instanz als Kachel in die Symcon-Kachelvisualisierung aufnehmen. Keine HTML-Box anlegen. Nach einem Modulupdate die geöffnete Visualisierung neu laden, damit Änderungen am HTML/CSS/JavaScript wirksam werden.
+3. Überwachung aktivieren und **Übernehmen** anklicken. Mit **Verbindung testen** prüfst du die HTTP-Antwort, die Anmeldung mit einer neuen Sitzung und die abrufbaren Daten. Eine laufende Abfrage oder Wiederholsperre wird im Testergebnis angezeigt.
+4. Erkannte Pools, Laufwerke und Lüfter erscheinen automatisch in der bereits geöffneten Variablenliste. Die neun allgemeinen Messgrößen stehen bereits vor der Geräteerkennung zur Auswahl. Nach dem ersten Datenabruf ergänzt das Modul die vom Gerät erkannten Pools, Volumes, Lüfter und Laufwerke. Gewünschte Variablen einzeln aktivieren und erneut übernehmen. Ohne Auswahl bleibt es bei **null zusätzlichen Variablen**.
+5. Instanz als Kachel in die Symcon-Kachelvisualisierung aufnehmen. Keine HTML-Box anlegen. Nach einem Modulupdate die geöffnete Visualisierung neu laden, damit Änderungen am HTML/CSS/JavaScript wirksam werden.
 
 Anmeldung mit RSA-Passwortverschlüsselung, Sitzungstoken und Cookies erfolgt automatisch. Die notwendige Freigabe eines neuen Clients bei **Zwei-Faktor-Anmeldung wird noch nicht unterstützt**. Ein solches Konto liefert eine Diagnose; die Zwei-Faktor-Prüfung wird nicht umgangen. Für produktive Nutzung mit diesem Konto muss der Freigabeablauf zunächst ergänzt werden.
+
+## Änderungen in Build 5
+
+Die zusätzlichen Messwerte sind unter **Variablenverwaltung** einzeln auswählbar. LAN-Werte geben die Gesamtrate der NAS in Byte pro Sekunde an. RAM und Volume-Speicher werden in Byte gespeichert. Beim Volume wird der vom Dateisystem gemeldete verfügbare Speicher erfasst. Laufwerksbetriebsstunden stammen aus der regulären Laufwerksliste.
+
+Falls der LAN-Endpunkt fehlt oder Leserechte fehlen, meldet der Verbindungstest einen Teilabruf. Vorübergehend fehlende Werte lassen den zuletzt gespeicherten Variablenwert bestehen. Die Felder für verfügbaren Volume-Speicher und Betriebsstunden erscheinen, sobald UGOS dafür einen gültigen Wert liefert.
+
+## Änderungen in Build 4
+
+Die gespeicherte HTTP-Adresse wird beim Modulupdate in NAS-Adresse und Port aufgeteilt. Bei einer bisherigen HTTP-Adresse ohne ausdrückliche Portangabe bleibt der tatsächlich verwendete Standardport 80 erhalten. Neue Instanzen erhalten Port 9999 als Vorgabe.
+
+Der Verbindungstest prüft eine neue Anmeldung. Er meldet HTTP-Antwort, UGOS-Anmeldung, erkannte Messwerte und Teilabrufe. Er nutzt die gespeicherten Einstellungen und das reguläre Wiederholintervall nach Fehlern.
 
 ## Änderungen in Build 3
 
@@ -69,15 +81,19 @@ Für ein lokales Update den Inhalt des bestehenden Bibliotheksordners durch Buil
 | RAM-Auslastung | Float | % | aus |
 | CPU-Temperatur | Float | °C | aus |
 | Betriebszeit | Integer | s | aus |
+| LAN senden und LAN empfangen (gesamt) | Float | B/s | aus |
+| Freier RAM und RAM-Cache | Float | B | aus |
+| Je Volume: verfügbarer Speicher | Float | B | aus |
 | Je Lüfter: Drehzahl | Integer | rpm | aus |
 | Je Pool: Volume-Belegung | Float | % | aus |
 | Je Pool: UGOS-Status | String | Rohstatus | aus |
 | Je Laufwerk: Temperatur | Float | °C | aus |
 | Je Laufwerk: UGOS-Status | String | Rohstatus | aus |
+| Je Laufwerk: Betriebsstunden | Integer | h | aus |
 
 Die Kachel erhält ihre Daten direkt aus dem Instanzattribut und funktioniert unabhängig von den optionalen Variablen. Sitzungstoken liegen nur in einem flüchtigen Buffer. Es gibt keine Hilfs-, Debug- oder HTML-Box-Variablen. Profile werden erst bei tatsächlich angelegten Variablen benötigt und zählen nicht als Statusvariablen.
 
-Standard: **0**, empfohlene Auswahl: **4** Variablen. Maximale Auswahl bei den implementierten Erkennungsgrenzen: `5 + Lüfter + 2 × Pools + 2 × Laufwerke`. Je 16 CPU- und Gehäuselüfter sowie je 32 Pools und Laufwerke ergeben maximal **165** Variablen einer aktuellen Datenquelle. Erhaltene Altvariablen können diese Zahl erhöhen. Nicht erkannte Komponenten werden nicht als Platzhalter angelegt.
+Standard: **0**, empfohlene Auswahl: **4** Variablen. Maximale Auswahl bei den implementierten Erkennungsgrenzen: `9 + Lüfter + 2 × Pools + Volumes + 3 × Laufwerke`. Je 16 CPU- und Gehäuselüfter, je 32 Pools und Laufwerke sowie insgesamt bis zu 256 Volumes ergeben maximal **457** Variablen einer aktuellen Datenquelle. Erhaltene Altvariablen können diese Zahl erhöhen. Nicht erkannte Komponenten werden nicht als Platzhalter angelegt.
 
 **Vorhandene Variable**: Ziel `0` legt eine eigene Variable an. Eine andere ausgewählte Variable wird mit dem Messwert beschrieben und spart eine zusätzliche Variable. Sie muss zum Datentyp passen und darf keine Variablenaktion besitzen. Die Auswahl ist damit ein ausdrücklicher Schreibauftrag für diese Symcon-Variable. Namen und Profile externer Variablen bleiben unangetastet.
 

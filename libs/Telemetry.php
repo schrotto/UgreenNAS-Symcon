@@ -44,7 +44,7 @@ final class UgosTelemetry
         return ['total' => $total, 'used' => $used, 'percent' => 100 * $used / $total];
     }
 
-    public static function normalize(array $machine, array $stats, ?array $pools, ?array $disks): array
+    public static function normalize(array $machine, array $stats, ?array $pools, ?array $disks, ?array $network = null): array
     {
         $overview = $stats['overview'] ?? $stats;
         $common = $machine['common'] ?? [];
@@ -58,6 +58,10 @@ final class UgosTelemetry
         $add('CPUTemperature', 'CPU-Temperatur', 2, '°C', self::number($overview['cpu'][0]['temp'] ?? null, -20, 130));
         $uptime = self::number($common['run_time'] ?? null, 0, 315576000);
         $add('Uptime', 'Betriebszeit', 1, 's', $uptime === null ? null : (int) $uptime);
+        $add('LANSend', 'LAN senden (gesamt)', 2, 'B/s', self::number($network['series'][0]['send_rate'] ?? null));
+        $add('LANReceive', 'LAN empfangen (gesamt)', 2, 'B/s', self::number($network['series'][0]['recv_rate'] ?? null));
+        $add('RAMFree', 'Freier RAM', 2, 'B', self::number($stats['mem']['structure']['free'] ?? null));
+        $add('RAMCache', 'RAM-Cache', 2, 'B', self::number($stats['mem']['structure']['cache'] ?? null));
         foreach (['cpu_fan' => 'CPU-Lüfter', 'device_fan' => 'Gehäuselüfter'] as $kind => $label) {
             foreach (array_slice(is_array($overview[$kind] ?? null) ? $overview[$kind] : [], 0, 16) as $i => $fan) {
                 $id = 'Fan_' . $kind . '_' . $i;
@@ -66,6 +70,7 @@ final class UgosTelemetry
             }
         }
         $poolCards = [];
+        $volumeCount = 0;
         foreach (array_slice($pools['result'] ?? [], 0, 32) as $pool) {
             if (!is_array($pool) || self::text($pool['name'] ?? '') === '') {
                 continue;
@@ -78,6 +83,31 @@ final class UgosTelemetry
             $add($id . '_Status', $name . ' – UGOS-Status', 3, '', $status === '' ? null : $status, 'pool');
             $poolCards[] = ['id' => $id, 'name' => $name, 'total' => $total, 'used' => $used,
                 'percent' => $percent, 'status' => $status, 'raid' => self::text($pool['level'] ?? '')];
+            $volumes = $pool['volumes'] ?? [];
+            if (!is_array($volumes)) {
+                continue;
+            }
+            foreach ($volumes as $volume) {
+                if ($volumeCount >= 256) {
+                    break;
+                }
+                if (!is_array($volume)) {
+                    continue;
+                }
+                $volumeName = self::text($volume['name'] ?? '');
+                $available = self::number($volume['available'] ?? null);
+                $capacity = self::number($volume['total'] ?? null);
+                if ($volumeName === '' || $available === null || ($capacity !== null && $available > $capacity)) {
+                    continue;
+                }
+                $volumeId = 'Volume_' . substr(hash('sha256', json_encode([$id, $volumeName], JSON_INVALID_UTF8_SUBSTITUTE | JSON_THROW_ON_ERROR)), 0, 16) . '_Available';
+                if (isset($metrics[$volumeId])) {
+                    continue;
+                }
+                $volumeLabel = self::text($volume['label'] ?? '') ?: $volumeName;
+                $add($volumeId, $name . ' / ' . $volumeLabel . ' – Verfügbarer Speicher', 2, 'B', $available, 'volume');
+                $volumeCount++;
+            }
         }
         $diskCards = [];
         // Temperaturzuordnung nur über Geräteidentität, niemals über Reihenfolge.
@@ -103,6 +133,10 @@ final class UgosTelemetry
             $status = self::text($disk['status'] ?? null);
             $add($id . '_Temperature', $name . ' – Temperatur', 2, '°C', $temperature, 'disk');
             $add($id . '_Status', $name . ' – UGOS-Status', 3, '', $status === '' ? null : $status, 'disk');
+            $hours = self::number($disk['power_on_hours'] ?? null, 0, 2147483647);
+            if ($hours !== null && floor($hours) === $hours) {
+                $add($id . '_PowerOnHours', $name . ' – Betriebsstunden', 1, 'h', (int) $hours, 'disk');
+            }
             $diskCards[] = ['id' => $id, 'name' => $name, 'model' => self::text($disk['model'] ?? ''),
                 'size' => self::number($disk['size'] ?? null), 'temperature' => $temperature, 'status' => $status];
         }

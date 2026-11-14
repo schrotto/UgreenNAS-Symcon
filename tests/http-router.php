@@ -41,9 +41,17 @@ if (str_starts_with($token, 'oversize')) {
     echo str_repeat('x', 2200000);
     exit;
 }
+if (str_starts_with($token, 'partial-') && $path === '/ugreen/v2/storage/disk/list') {
+    $response([], 1008);
+}
+if (str_starts_with($token, 'partial-') && $path === '/ugreen/v1/taskmgr/stat/net') {
+    http_response_code(404);
+    $response([]);
+}
 $f = telemetryFixtures();
 $map = ['/ugreen/v1/sysinfo/machine/common' => 'machine', '/ugreen/v1/taskmgr/stat/get_all' => 'stats',
-    '/ugreen/v1/taskmgr/stat/overview' => 'stats', '/ugreen/v1/storage/pool/list' => 'pools', '/ugreen/v2/storage/disk/list' => 'disks'];
+    '/ugreen/v1/taskmgr/stat/overview' => 'stats', '/ugreen/v1/storage/pool/list' => 'pools', '/ugreen/v2/storage/disk/list' => 'disks',
+    '/ugreen/v1/taskmgr/stat/net' => 'network'];
 if (!isset($map[$path])) {
     http_response_code(404);
     $response([]);

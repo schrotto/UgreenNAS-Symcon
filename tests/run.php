@@ -25,13 +25,27 @@ function rejects(callable $fn, string $message, ?int $code = null): void
     throw new RuntimeException('FEHLER: Erwartete Ablehnung: ' . $message);
 }
 $f = telemetryFixtures();
-$s = UgosTelemetry::normalize($f['machine'], $f['stats'], $f['pools'], $f['disks']);
+$s = UgosTelemetry::normalize($f['machine'], $f['stats'], $f['pools'], $f['disks'], $f['network']);
 check($s['metrics']['CPU']['value'] === 17.4, 'CPU korrekt');
 check($s['disks'][0]['temperature'] === 34.0 && $s['disks'][1]['temperature'] === 36.0, 'Disktemperatur über Identität statt Reihenfolge');
 $disks = $f['disks'];
 $disks['result'] = array_reverse($disks['result']);
 $s2 = UgosTelemetry::normalize($f['machine'], $f['stats'], $f['pools'], $disks);
 check($s['disks'][0]['id'] === $s2['disks'][1]['id'], 'Laufwerk-Ident bleibt bei Sortierwechsel stabil');
+$m = $s['metrics'];
+check($m['LANSend']['value'] === 12500.5 && $m['LANReceive']['value'] === 0.0, 'LAN-Raten stammen aus der Gesamtzeile und erhalten Richtung, Nachkommastellen und Nullwerte');
+check($m['RAMFree']['value'] === 8589934592.0 && $m['RAMCache']['value'] === 4294967296.0, 'Freier RAM und Cache werden als Byte-Werte übernommen');
+$volumes = array_filter($m, static fn ($metric) => $metric['group'] === 'volume');
+check(count($volumes) === 1 && reset($volumes)['value'] === 28000000000000.0, 'Verfügbarer Volume-Speicher verwendet available');
+$reorderedPools = $f['pools'];
+$reorderedPools['result'][0]['volumes'][] = ['name' => 'second', 'total' => 1000, 'available' => 100];
+$reorderedPools['result'][0]['volumes'] = array_reverse($reorderedPools['result'][0]['volumes']);
+$reorderedPools['result'][0]['volumes'][1]['label'] = 'Neuer Anzeigename';
+$reordered = UgosTelemetry::normalize([], [], $reorderedPools, null)['metrics'];
+check($reordered[array_key_first($volumes)]['value'] === 28000000000000.0, 'Volume-Ident bleibt bei Sortier- und Labelwechsel stabil');
+check($s2['metrics'][$s['disks'][0]['id'] . '_PowerOnHours']['value'] === 8760
+    && $m[$s['disks'][1]['id'] . '_PowerOnHours']['value'] === 0, 'Betriebsstunden bleiben beim richtigen Laufwerk');
+check($s2['metrics']['LANReceive']['value'] === null, 'Fehlende LAN-Statistik wird nicht als 0 B/s gemeldet');
 check(abs($s['pools'][0]['percent'] - 39.5833333) < .0001, 'Pool-Belegung berechnet');
 check($f['pools']['result'][0]['used'] === $f['pools']['result'][0]['total'] && $s['pools'][0]['percent'] < 40, '100 Prozent Pool-Zuweisung werden nicht als volle Volumes ausgegeben');
 $usage = UgosTelemetry::volumeUsage([['name' => 'a', 'total' => 100, 'used' => 90], ['name' => 'b', 'total' => 900, 'used' => 90]]);
