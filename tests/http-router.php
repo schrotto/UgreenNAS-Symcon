@@ -43,6 +43,16 @@ if (str_starts_with($token, 'slow-') && in_array($path, ['/ugreen/v1/taskmgr/sta
 if (str_starts_with($token, 'tasktimeout-') && str_starts_with($path, '/ugreen/v1/taskmgr/stat/')) {
     usleep(2200000);
 }
+if ((str_starts_with($token, 'desktoponly-') || str_starts_with($token, 'wsbad-'))
+    && str_starts_with($path, '/ugreen/v1/taskmgr/stat/')) {
+    usleep(2200000);
+}
+if (preg_match('/^wslive-\d+$/D', $token) && str_starts_with($path, '/ugreen/v1/taskmgr/stat/')) {
+    $marker = $directory . '/' . $token;
+    if (!is_file($marker)) {
+        usleep(2200000);
+    }
+}
 if (preg_match('/^machinefirst-\d+$/D', $token)) {
     $first = $directory . '/' . $token;
     if (!is_file($first)) {
@@ -71,7 +81,19 @@ if (str_starts_with($token, 'partial-') && $path === '/ugreen/v1/taskmgr/stat/ne
     http_response_code(404);
     $response([]);
 }
+if ($path === '/ugreen/v1/desktop/components/data' && ($_GET['id'] ?? '') === 'desktop.component.DeviceMonitoring') {
+    if (str_starts_with($token, 'partial-')) {
+        $response([], 1024);
+    }
+    if (str_starts_with($token, 'desktoponly-') || str_starts_with($token, 'wsbad-')) {
+        $response(['cpu_usage_rate' => 0, 'ram_usage_rate' => '35.11', 'upload_speed' => ['raw' => 7436],
+            'download_speed' => ['raw' => '3480', 'unit' => 'KB/s', 'value' => 3.4]]);
+    }
+}
 $f = telemetryFixtures();
+if (str_starts_with($token, 'desktoponly-') || str_starts_with($token, 'wsbad-')) {
+    $f['machine']['hardware']['cpu'][0]['temperature'] = 52;
+}
 if (str_starts_with($token, 'machinefirst-')) {
     $f['stats']['net'] = $f['network'];
 }

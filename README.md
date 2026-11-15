@@ -1,6 +1,6 @@
 # UGREEN NAS Monitoring für IP-Symcon
 
-Version **0.9, Build 9 – Testversion**, Stand 15.11.2026.
+Version **0.10, Build 10 – Testversion**, Stand 15.11.2026.
 
 Lokales Monitoring für UGREEN-NAS-Geräte mit UGOS Pro über deren Webschnittstelle. Es sind keine SSH-Verbindung, kein Docker-Container und kein Agent auf der NAS erforderlich. Die Bibliothek ist für IP-Symcon **ab 8.1** vorbereitet und verwendet `IPSModuleStrict` und das native HTML-SDK. Die tatsächlich eingesetzte Symcon-Version wurde noch nicht mitgeteilt.
 
@@ -41,6 +41,12 @@ Für die Installation über **Module Control → Hinzufügen** die Repository-Ad
 5. Instanz als Kachel in die Symcon-Kachelvisualisierung aufnehmen. Keine HTML-Box anlegen. Nach einem Modulupdate die geöffnete Visualisierung neu laden, damit Änderungen am HTML/CSS/JavaScript wirksam werden.
 
 Anmeldung mit RSA-Passwortverschlüsselung, Sitzungstoken und Cookies erfolgt automatisch. Die notwendige Freigabe eines neuen Clients bei **Zwei-Faktor-Anmeldung wird noch nicht unterstützt**. Ein solches Konto liefert eine Diagnose; die Zwei-Faktor-Prüfung wird nicht umgangen. Für produktive Nutzung mit diesem Konto muss der Freigabeablauf zunächst ergänzt werden.
+
+## Änderungen in Build 10
+
+Wenn die ausführliche Statistik ein Zeitlimit erreicht, öffnet das Modul für die Dauer des Abrufs eine UGOS-Live-Verbindung auf dem konfigurierten HTTP-Port und versucht die Statistik erneut. Ist der Abruf erfolgreich, wird die Live-Verbindung bei der nächsten Abfrage vor der Statistik geöffnet. [Live-Abonnement der Home-Assistant-Integration](https://github.com/Tom-Bom-badil/home-assistant_ugreen-nas/blob/main/custom_components/ugreen/api.py#L874-L946)
+
+Die Geräteüberwachung des UGOS-Desktops dient als zweite Quelle für CPU- und RAM-Auslastung sowie LAN-Sende- und Empfangsraten. Die CPU-Temperatur kann zusätzlich aus den Geräteinformationen kommen. Freier RAM und Cache benötigen weiterhin die Detailstatistik. **Verbindung testen** zeigt die verwendeten Rückfälle und fehlende Werte an. [UGOS-Geräteantworten für mehrere Modelle](https://github.com/Tom-Bom-badil/home-assistant_ugreen-nas/discussions/43)
 
 ## Änderungen in Build 9
 
@@ -164,6 +170,7 @@ UgreenNAS/
   module.html
 libs/
   UgosClient.php
+  UgosResourceSubscription.php
   Telemetry.php
 docs/
   TESTBERICHT.md
@@ -178,6 +185,7 @@ tests/
   run.php
   symcon.php
   run_local.py
+  websocket_fixture.py
   make_preview.php
   preview-payload.json
   browser.cjs

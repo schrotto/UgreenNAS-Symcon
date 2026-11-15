@@ -1,4 +1,4 @@
-# Testbericht – 0.9, Build 9
+# Testbericht – 0.10, Build 10
 
 Stand 15.11.2026. Die folgenden Prüfungen wurden tatsächlich ausgeführt. Bei den Entwicklerprüfungen bestand **keine Verbindung zu einer echten NAS oder einem Symcon-Dienst**. Vom Benutzer wurden im ersten Gerätetest korrekte CPU-, RAM-, Lüfter- und Festplattentemperaturwerte gemeldet. Die beiden Korrekturen in Build 2 sind am Gerät noch zu bestätigen.
 
@@ -12,8 +12,8 @@ Stand 15.11.2026. Die folgenden Prüfungen wurden tatsächlich ausgeführt. Bei 
 | `form.json` | JSON gültig. Geänderte Felder und Button anhand der Symcon-Dokumentation geprüft | Kein echter Instanzeditor-/Konsolentest |
 | `library.json` | Alle Felder außer Versions-Enum schema-konform | Öffentliches Schema führt weiterhin nur Versionen bis 6.2; Mindestversion 8.1 deshalb formal vom alten Enum abgelehnt. Die Bibliothek gibt ihre tatsächliche Mindestversion an; das Schema wurde nicht verändert. |
 | Daten-/Clienttests | 47 Prüfungen bestanden | Synthetische Fixtures und echter lokaler HTTP-Testserver |
-| SymconStubs | 76 Prüfungen bestanden | Unveränderte offizielle Stubs, kein echter Kernel |
-| Gerenderter Browser | 45 Prüfungen mit Build 8 bestanden | Gleiches Kachel-HTML in Build 9. Headless Chromium/Brave mit Playwright, kein Symcon-Webclient |
+| SymconStubs | 82 Prüfungen bestanden | Unveränderte offizielle Stubs, kein echter Kernel |
+| Gerenderter Browser | 45 Prüfungen mit Build 8 bestanden | Gleiches Kachel-HTML in Build 10. Headless Chromium/Brave mit Playwright, kein Symcon-Webclient |
 | Sichtkontrolle | Dunkel-, Hell- und Smartphone-Vorschau geöffnet und geprüft | Testdaten, keine Live-Messwerte |
 | ZIP | CRC und Bytegleichheit mit allen enthaltenen Workspace-Dateien geprüft | Installationsabnahme am Zielsystem noch erforderlich |
 
@@ -96,3 +96,7 @@ Die Modul-HTML ist seit dem bestandenen Browserlauf von Build 2 unverändert; di
 ## Prüfungen für Build 9
 
 47 Daten- und HTTP-Prüfungen sowie 76 Prüfungen mit SymconStubs sind bestanden. Der lokale Testserver simuliert eine UGOS-Sitzung, die Geräteinformationen vor der Statistik erwartet. Dieser Test scheitert mit Build 8 und besteht mit Build 9. Weitere Tests ergänzen fehlende CPU-, RAM- und LAN-Felder aus den verfügbaren Antworten, erhalten echte Nullwerte und prüfen die Kachel und Symcon-Variablen. Bei drei Ressourcen-Timeouts bleiben Pools und Laufwerke verfügbar. Die Diagnose benennt fehlende Werte, und bereits gespeicherte Variablenwerte bleiben erhalten. Welche Abfragen der DXP8800 Plus tatsächlich wieder beantwortet, ist am Gerät zu prüfen.
+
+## Prüfungen für Build 10
+
+47 Daten- und HTTP-Prüfungen sowie 82 Prüfungen mit SymconStubs sind bestanden. Ein lokaler Server simuliert den UGOS-Timeout bei der Ressourcenabfrage und antwortet nach einem gültigen WebSocket-Abonnement auf derselben HTTP-Adresse mit den vollständigen Messwerten. Getestet sind die Wiederverwendung der Sitzung beim nächsten Poll, die Ablehnung einer ungültigen Upgrade-Antwort und der HTTP-Rückfall auf Desktop-Messwerte. Der Test prüft die Richtung und Einheit der LAN-Rohwerte, die CPU-Temperatur aus den Geräteinformationen und die Diagnose bei weiterhin fehlenden RAM-Details. Wie die Live-Verbindung und Desktop-Messwerte auf dem DXP8800 Plus mit UGOS Pro 1.20.0.0142 reagieren, muss am Gerät geprüft werden.

@@ -9,6 +9,7 @@ import socket
 import subprocess
 import tempfile
 import time
+from websocket_fixture import websocket_fixture
 
 root = pathlib.Path(__file__).resolve().parents[1]
 php = [os.environ.get('PHP_BINARY', 'php')]
@@ -37,7 +38,9 @@ with tempfile.TemporaryDirectory(prefix='ugnas-test-') as directory:
                 subprocess.run(php + ['-l', str(file)], check=True, stdout=subprocess.DEVNULL)
             subprocess.run(php + [str(root / 'tests/run.php')], env=env, check=True)
             if env.get('SYMCON_STUBS'):
-                subprocess.run(php + [str(root / 'tests/symcon.php')], env=env, check=True)
+                with websocket_fixture(port, directory) as websocket_url:
+                    subprocess.run(php + [str(root / 'tests/symcon.php')],
+                                   env=env | {'UGNAS_TEST_WS_URL': websocket_url}, check=True)
         finally:
             server.terminate()
             server.wait(timeout=5)

@@ -119,6 +119,7 @@ class UgreenNAS extends IPSModuleStrict
                 $this->WriteAttributeString('Snapshot', '{}');
                 $this->WriteAttributeString('Catalog', '{}');
                 $this->WriteAttributeString('Source', $source);
+                $this->SetBuffer('LiveStatistics', '');
             }
             $this->configureVariables();
             $this->validateConfiguration();
@@ -191,6 +192,7 @@ class UgreenNAS extends IPSModuleStrict
             return [false, 'Eine NAS-Abfrage läuft bereits.'];
         }
         $client = null;
+        $subscription = null;
         try {
             // Ein manueller Test kann nach einem Transportfehler früher erneut prüfen.
             $waitUntil = (int) $this->GetBuffer('LastAttempt') + 5;
@@ -207,24 +209,46 @@ class UgreenNAS extends IPSModuleStrict
             $warnings = [];
             $machine = $this->readSection($client, '/ugreen/v1/sysinfo/machine/common', 'Geräteinformationen', $warnings,
                 static fn (array $data): bool => is_array($data['common'] ?? null));
-            $stats = $this->readSection($client, '/ugreen/v1/taskmgr/stat/get_all', 'Ressourcenstatistik', $warnings,
-                static fn (array $data): bool => is_array($data['overview'] ?? null) || is_array($data['cpu'] ?? null)
-                    || is_array($data['mem'] ?? null) || is_array($data['disk']['series'] ?? null)
-                    || is_array($data['net']['series'] ?? null));
+            $liveAttempted = $this->GetBuffer('LiveStatistics') === '1';
+            if ($liveAttempted) {
+                $subscription = $client->openResourceSubscription();
+            }
+            $statsWarnings = [];
+            $stats = $this->readResourceStatistics($client, $statsWarnings, $statsTimedOut);
+            $retryWithLive = $statsTimedOut && !$liveAttempted;
+            if ($retryWithLive) {
+                $liveAttempted = true;
+                $subscription = $client->openResourceSubscription();
+            }
             $validList = static fn (array $data): bool => is_array($data['result'] ?? null);
             $pools = $this->readSection($client, '/ugreen/v1/storage/pool/list', 'Speicherpools', $warnings, $validList);
             $disks = $this->readSection($client, '/ugreen/v2/storage/disk/list', 'Laufwerke', $warnings, $validList);
+            if ($retryWithLive && $subscription !== null) {
+                $statsWarnings = [];
+                $stats = $this->readResourceStatistics($client, $statsWarnings, $statsTimedOut, 5000);
+            }
+            $this->SetBuffer('LiveStatistics', $subscription !== null && $stats !== null ? '1' : '');
+            $warnings = array_merge($warnings, $statsWarnings);
+            $desktop = $statsTimedOut ? $this->readDesktopStatistics($client, $warnings) : null;
             $stats = $this->completeResourceOverview($client, $stats, $warnings);
             $network = null;
-            $combinedRates = UgosTelemetry::lanRates($stats['net'] ?? null);
-            if (in_array(null, $combinedRates, true)) {
+            [$send, $receive] = UgosTelemetry::lanRates($stats['net'] ?? null);
+            [$desktopSend, $desktopReceive] = UgosTelemetry::desktopLanRates($desktop ?? []);
+            if (($send ?? $desktopSend) === null || ($receive ?? $desktopReceive) === null) {
                 $network = $this->readSection($client, '/ugreen/v1/taskmgr/stat/net', 'LAN-Statistik', $warnings,
                     static fn (array $data): bool => UgosTelemetry::lanRates($data) !== [null, null]);
             }
-            if ($machine === null && $stats === null && $pools === null && $disks === null && $network === null) {
+            if (!$statsTimedOut && ($machine !== null || $stats !== null || $network !== null)) {
+                [$cpu, $ram] = UgosTelemetry::resourceUsage($stats ?? []);
+                [$fallbackSend, $fallbackReceive] = UgosTelemetry::lanRates($network);
+                if (in_array(null, [$cpu, $ram, $send ?? $fallbackSend, $receive ?? $fallbackReceive], true)) {
+                    $desktop = $this->readDesktopStatistics($client, $warnings);
+                }
+            }
+            if ($machine === null && $stats === null && $pools === null && $disks === null && $network === null && $desktop === null) {
                 throw new UgosApiException(implode(' ', $warnings));
             }
-            $snapshot = UgosTelemetry::normalize($machine ?? [], $stats ?? [], $pools, $disks, $network);
+            $snapshot = UgosTelemetry::normalize($machine ?? [], $stats ?? [], $pools, $disks, $network, $desktop ?? []);
             $unavailable = [];
             foreach (['CPU', 'RAM', 'CPUTemperature', 'RAMFree', 'RAMCache', 'LANSend', 'LANReceive'] as $ident) {
                 $metric = $snapshot['metrics'][$ident];
@@ -269,6 +293,12 @@ class UgreenNAS extends IPSModuleStrict
             $count = count(array_filter($snapshot['metrics'], static fn ($metric) => $metric['value'] !== null));
             $report = $client->connectionSummary() . ' Datenabruf: ' . $count . ' Messwerte, ';
             $report .= count($snapshot['pools']) . ' Speicherpools und ' . count($snapshot['disks']) . ' Laufwerke erkannt.';
+            if ($liveAttempted) {
+                $report .= $subscription !== null ? ' UGOS-Live-Verbindung geöffnet.' : ' UGOS-Live-Verbindung nicht verfügbar.';
+            }
+            if ($desktop !== null) {
+                $report .= ' Desktop-Monitoring liefert Ersatzwerte.';
+            }
             if ($warnings !== []) {
                 $report .= ' Teilabruf: ' . implode(' ', $warnings);
             }
@@ -292,11 +322,38 @@ class UgreenNAS extends IPSModuleStrict
             $this->markOffline();
             return [false, $report];
         } finally {
+            if ($subscription !== null) {
+                fclose($subscription);
+            }
             $retryAt = (int) $this->GetBuffer('NextAllowed');
             $seconds = $retryAt > 0 ? max(1, $retryAt - time()) : max(15, $this->ReadPropertyInteger('Interval'));
             $this->SetTimerInterval('Poll', $seconds * 1000);
             IPS_SemaphoreLeave('UGNAS_' . $this->InstanceID);
             $this->publish();
+        }
+    }
+
+    private function readResourceStatistics(UgosClient $client, array &$warnings, ?bool &$timedOut, ?int $timeoutMs = null): ?array
+    {
+        return $this->readSection($client, '/ugreen/v1/taskmgr/stat/get_all', 'Ressourcenstatistik', $warnings,
+            static fn (array $data): bool => is_array($data['overview'] ?? null) || is_array($data['cpu'] ?? null)
+                || is_array($data['mem'] ?? null) || is_array($data['disk']['series'] ?? null)
+                || is_array($data['net']['series'] ?? null), $timedOut, $timeoutMs);
+    }
+
+    private function readDesktopStatistics(UgosClient $client, array &$warnings): ?array
+    {
+        try {
+            $data = $client->readDesktopMonitoring();
+            if (UgosTelemetry::number($data['cpu_usage_rate'] ?? null, 0, 100) === null
+                && UgosTelemetry::number($data['ram_usage_rate'] ?? null, 0, 100) === null
+                && UgosTelemetry::desktopLanRates($data) === [null, null]) {
+                throw new UgosApiException('Keine auswertbaren Messwerte.');
+            }
+            return $data;
+        } catch (UgosApiException $e) {
+            $warnings[] = 'Desktop-Monitoring: ' . $e->getMessage();
+            return null;
         }
     }
 
@@ -328,10 +385,12 @@ class UgreenNAS extends IPSModuleStrict
         return $stats;
     }
 
-    private function readSection(UgosClient $client, string $path, string $label, array &$warnings, callable $valid): ?array
+    private function readSection(UgosClient $client, string $path, string $label, array &$warnings, callable $valid,
+        ?bool &$timedOut = null, ?int $timeoutMs = null): ?array
     {
+        $timedOut = false;
         try {
-            $data = $client->read($path);
+            $data = $client->read($path, $timeoutMs);
             if (!$valid($data)) {
                 throw new UgosApiException('Unbekanntes Datenformat.');
             }
@@ -341,6 +400,7 @@ class UgreenNAS extends IPSModuleStrict
             if (!$client->hasSession() || in_array($e->getCode(), [1003, 401, 1024], true)) {
                 throw new UgosApiException($message, $e->getCode(), $e);
             }
+            $timedOut = $e->getCode() === CURLE_OPERATION_TIMEDOUT;
             $warnings[] = $message;
             return null;
         }

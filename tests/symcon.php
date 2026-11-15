@@ -153,6 +153,8 @@ IPS_ApplyChanges($id);
 $report = $module->TestConnection();
 verify(str_contains($report, 'Anmeldung: erfolgreich') && str_contains($report, 'Teilabruf: Laufwerke') && str_contains($report, 'Leserechte'), 'Verbindungstest meldet Teilabrufe und fehlende Leserechte');
 verify(str_contains($report, 'LAN-Statistik') && str_contains($report, 'HTTP 404') && IPS_GetInstance($id)['InstanceStatus'] === 102, 'Fehlende LAN-Statistik lässt übrige Messungen weiterlaufen');
+verify(str_contains($report, 'Desktop-Monitoring: UGOS-Sitzung ist abgelaufen') && !str_contains($report, 'automatischer Versuch'),
+    'Separater Fehler der Desktop-Abfrage blockiert die gültige Sitzung nicht');
 IPS_SetProperty($id, 'Username', 'monitor');
 IPS_ApplyChanges($id);
 verify($module->Update(), 'Neue Messwerte für den Auswahltest erkannt');
@@ -247,6 +249,19 @@ verify(substr_count($report, 'cURL 28') === 3 && str_contains($report, 'Ohne akt
 verify($tileData['data']['metrics']['LANSend']['value'] === null && GetValue($lanId) === 1200.0,
     'Fehlende LAN-Daten überschreiben die gespeicherte Variable nicht mit null oder 0');
 
+IPS_SetProperty($id, 'Username', 'desktoponly');
+IPS_ApplyChanges($id);
+$report = $module->TestConnection();
+$tileData = json_decode((new ReflectionMethod($module, 'payload'))->invoke($module), true);
+$metrics = array_column($tileData['data']['metrics'], 'value', 'id');
+verify(str_contains($report, 'Desktop-Monitoring liefert Ersatzwerte') && $metrics['CPU'] === 0
+    && $metrics['RAM'] === 35.11 && $metrics['CPUTemperature'] === 52 && $metrics['LANSend'] === 7436
+    && $metrics['LANReceive'] === 3480 && GetValue($lanId) === 7436.0,
+    'Desktop-Abfrage und Geräteinformationen liefern auch bei ausgefallener Detailstatistik aktuelle Werte');
+verify(!str_contains($report, 'LAN-Statistik') && str_contains($report, 'Ohne aktuellen Messwert: Freier RAM, RAM-Cache')
+    && $metrics['RAMFree'] === null && $metrics['RAMCache'] === null,
+    'Desktop-Raten ersparen eine separate LAN-Abfrage. RAM-Details bleiben ohne Quelle unbekannt');
+
 IPS_SetProperty($id, 'Username', 'allfail');
 IPS_ApplyChanges($id);
 $report = $module->TestConnection();
@@ -259,4 +274,29 @@ $setBuffer->invoke($module, 'Failures', '6');
 $report = $module->TestConnection();
 verify(str_contains($report, 'Nächster automatischer Versuch in 60 s.'),
     'Manueller Test kann vor der automatischen Wiederholung erneut prüfen. Wartezeit bleibt auf 60 s begrenzt');
+
+$websocketUrl = parse_url(getenv('UGNAS_TEST_WS_URL'));
+IPS_SetProperty($id, 'Host', $websocketUrl['host']);
+IPS_SetProperty($id, 'Port', $websocketUrl['port']);
+IPS_SetProperty($id, 'Username', 'wslive');
+IPS_ApplyChanges($id);
+$report = $module->TestConnection();
+$tileData = json_decode((new ReflectionMethod($module, 'payload'))->invoke($module), true);
+$metrics = array_column($tileData['data']['metrics'], 'value', 'id');
+verify(str_contains($report, 'UGOS-Live-Verbindung geöffnet') && !str_contains($report, 'Teilabruf')
+    && $metrics['CPU'] === 17.4 && $metrics['RAMFree'] === 8589934592 && $metrics['RAMCache'] === 4294967296
+    && $metrics['LANSend'] === 12500.5 && $metrics['LANReceive'] === 0,
+    'Nach Ablauf der ersten Statistikabfrage liefert das authentifizierte Live-Abonnement wieder sämtliche Detailwerte');
+$loginCount = file_get_contents(getenv('UGNAS_TEST_TMP') . '/logins');
+$setBuffer->invoke($module, 'LastAttempt', (string) (time() - 6));
+$started = microtime(true);
+verify($module->Update() && microtime(true) - $started < 2
+    && file_get_contents(getenv('UGNAS_TEST_TMP') . '/logins') === $loginCount,
+    'Automatisches Polling mit erfolgreichem Live-Abruf öffnet die Verbindung vor der Statistik mit der bestehenden Sitzung');
+IPS_SetProperty($id, 'Username', 'wsbad');
+IPS_ApplyChanges($id);
+$report = $module->TestConnection();
+verify(str_contains($report, 'UGOS-Live-Verbindung nicht verfügbar') && str_contains($report, 'Desktop-Monitoring liefert Ersatzwerte')
+    && !is_file(getenv('UGNAS_TEST_TMP') . '/invalid-handshake-frame') && GetValue($lanId) === 7436.0,
+    'Ungültiger WebSocket-Handshake wird abgelehnt und Desktop-Messungen bleiben verfügbar');
 echo "Bestanden: $checks SymconStub-Prüfungen\n";

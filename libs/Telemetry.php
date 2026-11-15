@@ -58,7 +58,22 @@ final class UgosTelemetry
         return [self::number($summary['send_rate'] ?? null), self::number($summary['recv_rate'] ?? null)];
     }
 
-    public static function normalize(array $machine, array $stats, ?array $pools, ?array $disks, ?array $network = null): array
+    public static function desktopLanRates(array $desktop): array
+    {
+        return [self::number($desktop['upload_speed']['raw'] ?? null), self::number($desktop['download_speed']['raw'] ?? null)];
+    }
+
+    public static function resourceUsage(array $stats): array
+    {
+        $overview = $stats['overview'] ?? $stats;
+        return [
+            self::number($overview['cpu'][0]['used_percent'] ?? null, 0, 100),
+            self::number($overview['mem'][0]['used_percent'] ?? null, 0, 100)
+        ];
+    }
+
+    public static function normalize(array $machine, array $stats, ?array $pools, ?array $disks, ?array $network = null,
+        array $desktop = []): array
     {
         $overview = $stats['overview'] ?? $stats;
         $common = $machine['common'] ?? [];
@@ -67,15 +82,18 @@ final class UgosTelemetry
             $metrics[$id] = compact('id', 'name', 'type', 'unit', 'value', 'group');
         };
         $add('Online', 'Verbindung', 0, '', true);
-        $add('CPU', 'CPU-Auslastung', 2, '%', self::number($overview['cpu'][0]['used_percent'] ?? null, 0, 100));
-        $add('RAM', 'RAM-Auslastung', 2, '%', self::number($overview['mem'][0]['used_percent'] ?? null, 0, 100));
-        $add('CPUTemperature', 'CPU-Temperatur', 2, '°C', self::number($overview['cpu'][0]['temp'] ?? null, -20, 130));
+        [$cpu, $ram] = self::resourceUsage($stats);
+        $add('CPU', 'CPU-Auslastung', 2, '%', $cpu ?? self::number($desktop['cpu_usage_rate'] ?? null, 0, 100));
+        $add('RAM', 'RAM-Auslastung', 2, '%', $ram ?? self::number($desktop['ram_usage_rate'] ?? null, 0, 100));
+        $add('CPUTemperature', 'CPU-Temperatur', 2, '°C', self::number($overview['cpu'][0]['temp'] ?? null, -20, 130)
+            ?? self::number($machine['hardware']['cpu'][0]['temperature'] ?? null, 1, 130));
         $uptime = self::number($common['run_time'] ?? null, 0, 315576000);
         $add('Uptime', 'Betriebszeit', 1, 's', $uptime === null ? null : (int) $uptime);
         [$send, $receive] = self::lanRates($stats['net'] ?? null);
         [$fallbackSend, $fallbackReceive] = self::lanRates($network);
-        $add('LANSend', 'LAN senden (gesamt)', 2, 'B/s', $send ?? $fallbackSend);
-        $add('LANReceive', 'LAN empfangen (gesamt)', 2, 'B/s', $receive ?? $fallbackReceive);
+        [$desktopSend, $desktopReceive] = self::desktopLanRates($desktop);
+        $add('LANSend', 'LAN senden (gesamt)', 2, 'B/s', $send ?? $fallbackSend ?? $desktopSend);
+        $add('LANReceive', 'LAN empfangen (gesamt)', 2, 'B/s', $receive ?? $fallbackReceive ?? $desktopReceive);
         $add('RAMFree', 'Freier RAM', 2, 'B', self::number($stats['mem']['structure']['free'] ?? null));
         $add('RAMCache', 'RAM-Cache', 2, 'B', self::number($stats['mem']['structure']['cache'] ?? null));
         foreach (['cpu_fan' => 'CPU-Lüfter', 'device_fan' => 'Gehäuselüfter'] as $kind => $label) {
