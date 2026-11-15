@@ -135,6 +135,9 @@ verify(str_contains($report, 'Antwort erhalten') && str_contains($report, 'Anmel
 $p = json_decode((new ReflectionMethod($module, 'payload'))->invoke($module), true);
 verify(!$p['fresh'] && $p['nextAllowed'] >= time() + 899, 'Anmeldefehler macht Daten alt und setzt 15-Minuten-Sperre');
 verify(!$module->Update(), 'Wiederholsperre verhindert unmittelbaren neuen Login');
+(new ReflectionMethod($module, 'SetBuffer'))->invoke($module, 'LastAttempt', (string) (time() - 6));
+verify(str_contains($module->TestConnection(), 'Nächster Test'), 'Manueller Test beachtet die Sperre bei abgelehnter Anmeldung');
+
 IPS_SetProperty($id, 'Username', 'anderes-geraet');
 IPS_ApplyChanges($id);
 $p = json_decode((new ReflectionMethod($module, 'payload'))->invoke($module), true);
@@ -153,32 +156,28 @@ verify(str_contains($report, 'LAN-Statistik') && str_contains($report, 'HTTP 404
 IPS_SetProperty($id, 'Username', 'monitor');
 IPS_ApplyChanges($id);
 verify($module->Update(), 'Neue Messwerte für den Auswahltest erkannt');
-$module->RequestAction('SetTileMetricVisibility', ['id' => 'LANSend', 'visible' => false]);
+$persistence = $module->GetPersistence();
+$persistence['attributes']['HiddenTileMetrics'] = '["CPU","LANSend"]';
+$migrated = json_decode($module->Migrate(json_encode($persistence)), true);
+$module->ApplyPersistence($migrated);
+IPS_ApplyChanges($id);
+$form = json_decode($module->GetConfigurationForm(), true);
+$visualSettings = array_column($form['elements'][2]['items'], null, 'name');
+$tileValues = array_column($visualSettings['TileMetrics']['values'], 'Visible', 'Ident');
+verify(count($tileValues) === 10 && !$tileValues['CPU'] && !$tileValues['LANSend'] && $tileValues['RAM'],
+    'Modulkonfiguration enthält Haupt- und Zusatzwerte mit übernommener bisheriger Auswahl');
 $tileData = json_decode((new ReflectionMethod($module, 'payload'))->invoke($module), true);
-verify(count($tileData['extraMetrics']) === 7 && $tileData['hiddenTileMetrics'] === ['LANSend'],
-    'Kachelauswahl speichert nur den betroffenen Messwert und funktioniert ohne angelegte Zusatzvariablen');
+verify($tileData['hiddenTileMetrics'] === ['CPU', 'LANSend'], 'Migrierte Auswahl bleibt in der Kachel wirksam');
+IPS_SetProperty($id, 'TileMetrics', '[{"Ident":"CPU","Visible":true},{"Ident":"RAM","Visible":false},{"Ident":"LANSend","Visible":false}]');
 IPS_ApplyChanges($id);
 $tileData = json_decode((new ReflectionMethod($module, 'payload'))->invoke($module), true);
-verify($tileData['hiddenTileMetrics'] === ['LANSend'], 'Kachelauswahl bleibt nach Übernehmen bestehen');
-$module->RequestAction('SetTileMetricVisibility', ['id' => 'LANSend', 'visible' => true]);
-$tileData = json_decode((new ReflectionMethod($module, 'payload'))->invoke($module), true);
-verify($tileData['hiddenTileMetrics'] === [], 'Ausgeblendeter Wert lässt sich gezielt wieder einblenden');
-foreach (['CPU', 'RAM', 'CPUTemperature'] as $metricId) {
-    $module->RequestAction('SetTileMetricVisibility', ['id' => $metricId, 'visible' => false]);
-}
-$tileData = json_decode((new ReflectionMethod($module, 'payload'))->invoke($module), true);
-verify(array_column($tileData['primaryMetrics'], 'id') === ['CPU', 'RAM', 'CPUTemperature']
-    && $tileData['hiddenTileMetrics'] === ['CPU', 'RAM', 'CPUTemperature'],
-    'Alle drei Hauptwerte sind einzeln auswählbar und ihre Einstellungen werden gespeichert');
-$module->RequestAction('SetTileMetricVisibility', ['id' => 'RAM', 'visible' => true]);
-IPS_ApplyChanges($id);
-$tileData = json_decode((new ReflectionMethod($module, 'payload'))->invoke($module), true);
-verify($tileData['hiddenTileMetrics'] === ['CPU', 'CPUTemperature'], 'Einblenden von RAM ändert nur dessen Sichtbarkeit');
+verify($tileData['hiddenTileMetrics'] === ['RAM', 'LANSend'], 'Übernehmen speichert die Sichtbarkeit pro Messwert');
+verify(!str_contains($module->GetVisualizationTile(), 'Messwerte auswählen'), 'Kachel enthält kein Auswahlmenü');
 try {
-    $module->RequestAction('SetTileMetricVisibility', ['id' => 'Uptime', 'visible' => false]);
-    throw new RuntimeException('Fremder Ident akzeptiert');
+    $module->RequestAction('SetTileMetricVisibility', ['id' => 'CPU', 'visible' => false]);
+    throw new RuntimeException('Alte Kachelaktion akzeptiert');
 } catch (InvalidArgumentException $e) {
-    verify(true, 'Kachelauswahl akzeptiert nur die freigegebenen Messwert-Idents');
+    verify(true, 'Aus alten geöffneten Kacheln kann die Anzeigeauswahl nicht mehr verändert werden');
 }
 $snapshot = json_decode((new ReflectionMethod($module, 'ReadAttributeString'))->invoke($module, 'Snapshot'), true);
 $selections = [];
@@ -206,4 +205,27 @@ $ramIntervals = json_decode(IPS_GetVariablePresentation(IPS_GetObjectIDByIdent('
 verify($lanIntervals[0]['IntervalMinValue'] === 0 && $lanIntervals[0]['ConversionFactor'] === 1000
     && $lanIntervals[0]['SuffixValue'] === ' kB/s' && $ramIntervals[2]['ConversionFactor'] === 1000000000
     && $ramIntervals[2]['SuffixValue'] === ' GB', 'Native Darstellung skaliert LAN und RAM bei unveränderten Rohwerten');
+IPS_SetProperty($id, 'Username', 'slow');
+IPS_SetProperty($id, 'Timeout', 2);
+IPS_ApplyChanges($id);
+$report = $module->TestConnection();
+$tileData = json_decode((new ReflectionMethod($module, 'payload'))->invoke($module), true);
+verify(str_contains($report, 'Ressourcenstatistik: Zeitlimit') && str_contains($report, 'Geräteinformationen: Zeitlimit')
+    && str_contains($report, 'cURL 28') && $tileData['fresh'], 'Reale HTTP-Timeouts werden als Teilabruf gemeldet');
+verify($tileData['data']['metrics']['CPU']['value'] === 17.4
+    && $tileData['data']['metrics']['Uptime']['value'] === null
+    && count($tileData['data']['disks']) === 2, 'Ressourcenübersicht und Laufwerksdaten bleiben bei zwei langsamen Teilabfragen verfügbar');
+
+IPS_SetProperty($id, 'Username', 'allfail');
+IPS_ApplyChanges($id);
+$report = $module->TestConnection();
+verify(str_contains($report, 'Anmeldung: erfolgreich') && str_contains($report, 'Ressourcenübersicht: NAS antwortet mit HTTP 503')
+    && str_contains($report, 'Nächster automatischer Versuch in 10 s.')
+    && IPS_GetInstance($id)['InstanceStatus'] === 202, 'Ausfall sämtlicher Datenabrufe meldet einen klaren Fehler mit kurzem Wiederholintervall');
+$setBuffer = new ReflectionMethod($module, 'SetBuffer');
+$setBuffer->invoke($module, 'LastAttempt', (string) (time() - 6));
+$setBuffer->invoke($module, 'Failures', '6');
+$report = $module->TestConnection();
+verify(str_contains($report, 'Nächster automatischer Versuch in 60 s.'),
+    'Manueller Test kann vor der automatischen Wiederholung erneut prüfen. Wartezeit bleibt auf 60 s begrenzt');
 echo "Bestanden: $checks SymconStub-Prüfungen\n";

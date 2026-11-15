@@ -37,6 +37,13 @@ if (str_starts_with($token, 'invalidjson')) {
     echo '<html>keine API</html>';
     exit;
 }
+if (str_starts_with($token, 'slow-') && in_array($path, ['/ugreen/v1/taskmgr/stat/get_all', '/ugreen/v1/sysinfo/machine/common'], true)) {
+    usleep(2200000);
+}
+if (str_starts_with($token, 'allfail-')) {
+    http_response_code(503);
+    $response([]);
+}
 if (str_starts_with($token, 'oversize')) {
     echo str_repeat('x', 2200000);
     exit;
@@ -55,5 +62,8 @@ $map = ['/ugreen/v1/sysinfo/machine/common' => 'machine', '/ugreen/v1/taskmgr/st
 if (!isset($map[$path])) {
     http_response_code(404);
     $response([]);
+}
+if ($path === '/ugreen/v1/taskmgr/stat/overview') {
+    $response($f['stats']['overview']);
 }
 $response($f[$map[$path]]);

@@ -29,35 +29,19 @@ const path=require('path');
  check(await page.locator('#extraMetrics [data-metric-id]').count()===original.extraMetrics.length,'Alle zusätzlichen Werte werden gerendert');
  check((await page.locator('#extraMetrics [data-metric-id="LANSend"]').textContent()).includes('12,501 kB/s') &&
   (await page.locator('#extraMetrics [data-metric-id="RAMFree"]').textContent()).includes('8,59 GB'),'LAN und RAM werden passend skaliert');
- await page.locator('#metricSettings summary').click();
- const send=page.locator('#metricOptions input[data-metric-id="LANSend"]');
- const sendCard=page.locator('#extraMetrics [data-metric-id="LANSend"]');
- await page.evaluate(()=>{window.calls=[];window.requestAction=(id,value)=>window.calls.push([id,value]);});
- await send.uncheck();
- check(await sendCard.count()===0&&await page.locator('#extraMetrics [data-metric-id="LANReceive"]').isVisible(),'Einzelner Messwert wird ausgeblendet');
- check(await page.evaluate(()=>calls[0][0]==='SetTileMetricVisibility'&&calls[0][1].id==='LANSend'&&calls[0][1].visible===false),'Status je Messwert an Symcon gesendet');
- p=structuredClone(original);p.hiddenTileMetrics=['LANSend'];await feed(p);
- check(!(await send.isChecked())&&await sendCard.count()===0,'Gespeicherte Auswahl hält bei Live-Updates');
- await send.check();
- check(await sendCard.isVisible(),'Messwert wieder eingeblendet');
- for(const id of ['CPU','RAM','CPUTemperature']){
-  const checkbox=page.locator('#metricOptions input[data-metric-id="'+id+'"]');
-  const card=page.locator('#primaryMetrics [data-metric-id="'+id+'"]');
-  await checkbox.uncheck();
-  check(await card.isHidden()&&await page.locator('#primaryMetrics .card:visible').count()===2,id+' einzeln ausgeblendet');
+ check(await page.getByText('Messwerte auswählen',{exact:true}).count()===0,'In der Kachel gibt es kein Auswahlmenü');
+ for(const id of ['CPU','RAM','CPUTemperature','LANSend']){
   p=structuredClone(original);p.hiddenTileMetrics=[id];await feed(p);
-  check(await card.isHidden()&&!(await checkbox.isChecked()),id+' bleibt nach einem Live-Update ausgeblendet');
-  await checkbox.check();
-  check(await card.isVisible(),id+' wieder eingeblendet');
+  check(await page.locator('article[data-metric-id="'+id+'"]:visible').count()===0 &&
+   await page.locator('#primaryMetrics .card:visible').count()===(id==='LANSend'?3:2),id+' einzeln ausgeblendet');
+  await feed(original);
+  check(await page.locator('article[data-metric-id="'+id+'"]').isVisible(),id+' wieder eingeblendet');
  }
  p=structuredClone(original);
- p.extraMetrics=[];
- p.hiddenTileMetrics=['CPU','RAM','CPUTemperature'];
+ p.hiddenTileMetrics=['CPU','RAM','CPUTemperature',...p.extraMetrics.map(metric=>metric.id)];
  await feed(p);
- check(await page.locator('#primaryMetrics').isHidden()&&await page.locator('#metricSettings summary').isVisible(),
-  'Messwertauswahl bleibt erreichbar, wenn alle Hauptwerte ausgeblendet sind und Zusatzdaten fehlen');
- await page.locator('#metricOptions input[data-metric-id="CPU"]').check();
- check(await page.locator('#primaryMetrics [data-metric-id="CPU"]').isVisible(),'Hauptwert lässt sich aus leerer Anzeige wiederherstellen');
+ check(await page.locator('#primaryMetrics').isHidden()&&await page.locator('#extraSection').isHidden()
+  &&await page.locator('#refresh').isVisible(),'Vollständig ausgeblendete Bereiche verschwinden. Aktualisieren bleibt erreichbar');
  p=structuredClone(original);p.fresh=false;await feed(p);
  check(await page.locator('#state').textContent()==='Daten veraltet','Veraltete Daten werden markiert');
  p=structuredClone(original);p.enabled=false;await feed(p);

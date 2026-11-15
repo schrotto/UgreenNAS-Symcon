@@ -7,7 +7,6 @@ $s['timestamp'] = 1793458800;
 $s['warnings'] = [];
 $p = ['enabled' => true, 'fresh' => true, 'data' => $s, 'alerts' => [], 'diagnostic' => 'Designvorschau mit synthetischen Testdaten. Keine Verbindung zu einer NAS.', 'now' => $s['timestamp'], 'staleAfter' => 120, 'nextAllowed' => 0,
     'extraMetrics' => array_values(array_filter($s['metrics'], static fn (array $metric) => UgosTelemetry::isAdditionalMetric($metric['id']))),
-    'primaryMetrics' => array_map(static fn (string $id) => ['id' => $id, 'name' => $s['metrics'][$id]['name']], UgosTelemetry::PRIMARY_METRIC_IDS),
     'hiddenTileMetrics' => [],
     'options' => ['title' => 'Speicherzentrale', 'tileEnabled' => true, 'theme' => 'dark', 'accent' => '#52d6b0', 'compact' => false, 'disks' => true, 'pools' => true, 'fans' => true, 'controls' => true],
     'thresholds' => ['cpu' => 90, 'temperature' => 80, 'storage' => 85]];

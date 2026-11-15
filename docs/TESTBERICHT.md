@@ -1,6 +1,6 @@
-# Testbericht – 0.7, Build 7
+# Testbericht – 0.8, Build 8
 
-Stand 14.11.2026. Die folgenden Prüfungen wurden tatsächlich ausgeführt. Bei den Entwicklerprüfungen bestand **keine Verbindung zu einer echten NAS oder einem Symcon-Dienst**. Vom Benutzer wurden im ersten Gerätetest korrekte CPU-, RAM-, Lüfter- und Festplattentemperaturwerte gemeldet. Die beiden Korrekturen in Build 2 sind am Gerät noch zu bestätigen.
+Stand 15.11.2026. Die folgenden Prüfungen wurden tatsächlich ausgeführt. Bei den Entwicklerprüfungen bestand **keine Verbindung zu einer echten NAS oder einem Symcon-Dienst**. Vom Benutzer wurden im ersten Gerätetest korrekte CPU-, RAM-, Lüfter- und Festplattentemperaturwerte gemeldet. Die beiden Korrekturen in Build 2 sind am Gerät noch zu bestätigen.
 
 ## Ergebnisse
 
@@ -12,8 +12,8 @@ Stand 14.11.2026. Die folgenden Prüfungen wurden tatsächlich ausgeführt. Bei 
 | `form.json` | JSON gültig. Geänderte Felder und Button anhand der Symcon-Dokumentation geprüft | Kein echter Instanzeditor-/Konsolentest |
 | `library.json` | Alle Felder außer Versions-Enum schema-konform | Öffentliches Schema führt weiterhin nur Versionen bis 6.2; Mindestversion 8.1 deshalb formal vom alten Enum abgelehnt. Die Bibliothek gibt ihre tatsächliche Mindestversion an; das Schema wurde nicht verändert. |
 | Daten-/Clienttests | 47 Prüfungen bestanden | Synthetische Fixtures und echter lokaler HTTP-Testserver |
-| SymconStubs | 66 Prüfungen bestanden | Unveränderte offizielle Stubs, kein echter Kernel |
-| Gerenderter Browser | 50 Prüfungen bestanden | Headless Chromium/Brave mit Playwright, kein Symcon-Webclient |
+| SymconStubs | 70 Prüfungen bestanden | Unveränderte offizielle Stubs, kein echter Kernel |
+| Gerenderter Browser | 45 Prüfungen bestanden | Headless Chromium/Brave mit Playwright, kein Symcon-Webclient |
 | Sichtkontrolle | Dunkel-, Hell- und Smartphone-Vorschau geöffnet und geprüft | Testdaten, keine Live-Messwerte |
 | ZIP | CRC und Bytegleichheit mit allen enthaltenen Workspace-Dateien geprüft | Installationsabnahme am Zielsystem noch erforderlich |
 
@@ -88,3 +88,7 @@ Die Modul-HTML ist seit dem bestandenen Browserlauf von Build 2 unverändert; di
 ## Prüfungen für Build 7
 
 47 Daten- und HTTP-Prüfungen, 66 Prüfungen mit SymconStubs und 50 Browserprüfungen sind bestanden. Geprüft wurden unabhängig gespeicherte Einstellungen für CPU-Auslastung, RAM-Auslastung und CPU-Temperatur, erneutes Einblenden nach Live-Updates und das Menü bei vollständig ausgeblendeten Hauptwerten ohne Zusatzdaten. Die Ausführung in einer echten Symcon-Installation steht noch aus.
+
+## Prüfungen für Build 8
+
+47 Daten- und HTTP-Prüfungen, 70 Prüfungen mit SymconStubs und 45 Browserprüfungen sind bestanden. Der lokale HTTP-Server löste nach erfolgreicher Anmeldung echte Timeouts bei der ausführlichen Ressourcenstatistik und den Geräteinformationen aus. Die Ressourcenübersicht lieferte weiterhin CPU-Daten, und die Laufwerke blieben verfügbar. Geprüft sind außerdem die Diagnose bei Gesamtausfall, der kürzere automatische Wiederholabstand, die Schutzpause bei abgelehnter Anmeldung und die Übernahme alter Sichtbarkeitseinstellungen in die Modulkonfiguration. Der Test auf der betroffenen NAS steht noch aus.

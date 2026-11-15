@@ -1,6 +1,6 @@
 # UGREEN NAS Monitoring für IP-Symcon
 
-Version **0.7, Build 7 – Testversion**, Stand 14.11.2026.
+Version **0.8, Build 8 – Testversion**, Stand 15.11.2026.
 
 Lokales Monitoring für UGREEN-NAS-Geräte mit UGOS Pro über deren Webschnittstelle. Es sind keine SSH-Verbindung, kein Docker-Container und kein Agent auf der NAS erforderlich. Die Bibliothek ist für IP-Symcon **ab 8.1** vorbereitet und verwendet `IPSModuleStrict` und das native HTML-SDK. Die tatsächlich eingesetzte Symcon-Version wurde noch nicht mitgeteilt.
 
@@ -42,13 +42,19 @@ Für die Installation über **Module Control → Hinzufügen** die Repository-Ad
 
 Anmeldung mit RSA-Passwortverschlüsselung, Sitzungstoken und Cookies erfolgt automatisch. Die notwendige Freigabe eines neuen Clients bei **Zwei-Faktor-Anmeldung wird noch nicht unterstützt**. Ein solches Konto liefert eine Diagnose; die Zwei-Faktor-Prüfung wird nicht umgangen. Für produktive Nutzung mit diesem Konto muss der Freigabeablauf zunächst ergänzt werden.
 
+## Änderungen in Build 8
+
+Die Sichtbarkeit einzelner Werte stellst du in der Modulkonfiguration unter **Premium-Visualisierung → Messwerte in der Kachel** ein. Mit **Übernehmen** wird die Auswahl gespeichert. Build 8 übernimmt die bisherigen Einstellungen aus der Kachel. Nach einem ersten erfolgreichen Abruf ergänzt das Modul neu erkannte Messwerte in der Liste.
+
+Die Abfrage meldet langsame oder ausgefallene Datenbereiche als Teilabruf. Wenn die ausführliche Ressourcenstatistik ausfällt, versucht das Modul die einfachere UGOS-Ressourcenübersicht. Bei einem vorübergehenden Gesamtausfall versucht es die Abfrage automatisch nach 10 bis 60 Sekunden erneut. Der manuelle Verbindungstest kann nach mindestens fünf Sekunden seit dem vorherigen Start erneut prüfen. Für abgelehnte Anmeldungen gilt weiterhin die Schutzpause von 15 Minuten.
+
 ## Änderungen in Build 7
 
-Über **Messwerte auswählen** in der Kachel lassen sich CPU-Auslastung, RAM-Auslastung und CPU-Temperatur ebenso einzeln ein- und ausblenden wie die zusätzlichen Messwerte. Die Auswahl wird pro Symcon-Instanz gespeichert. Das Menü bleibt erreichbar, wenn alle Hauptwerte ausgeblendet sind.
+CPU-Auslastung, RAM-Auslastung und CPU-Temperatur wurden der individuellen Sichtbarkeitsauswahl hinzugefügt.
 
 ## Änderungen in Build 6
 
-Über **Messwerte auswählen** in der Kachel lässt sich jeder zusätzliche LAN-, RAM-, Volume- und Laufwerkswert einzeln ein- oder ausblenden. Die Auswahl wird für die Symcon-Instanz gespeichert. Die Messwerte erscheinen auch dann in der Kachel, wenn in der Variablenverwaltung keine Statusvariablen aktiviert wurden.
+Die Sichtbarkeitsauswahl wurde für zusätzliche LAN-, RAM-, Volume- und Laufwerkswerte eingeführt. Die Auswahl wird für die Symcon-Instanz gespeichert. Die Messwerte erscheinen auch dann in der Kachel, wenn in der Variablenverwaltung keine Statusvariablen aktiviert wurden.
 
 Modulvariablen verwenden native Symcon-Wertdarstellungen. Bei der Umstellung bestehender Variablen werden ihre IDs beibehalten. Benutzerdefinierte Legacy-Darstellungen an Modulvariablen werden durch die nativen Vorgaben ersetzt. Vorhandene native Benutzerdarstellungen haben Vorrang. Die automatische Skalierung verwendet kB, MB, GB und bei größeren Werten TB oder PB, bei LAN jeweils pro Sekunde. Skripte und Archive erhalten dieselben Rohwerte in Byte oder Byte pro Sekunde. [Symcon-Dokumentation zur Wertdarstellung](https://www.symcon.de/en/service/documentation/developer-area/sdk-tools/sdk-php/presentations/value-presentation/)
 
@@ -127,7 +133,7 @@ Pro Poll werden Systeminformationen, Statistiken, Speicherpools und Laufwerke ge
 
 Mindestintervall 15 Sekunden, Standard 60 Sekunden. Anfragen haben ein konfigurierbares Zeitlimit von 2–30 Sekunden; ein kompletter Durchlauf ist zusätzlich auf höchstens 55 Sekunden begrenzt. Zeitgleiche Polls werden per Symcon-Semaphore verhindert; manuelle Wiederholungen innerhalb von 5 Sekunden werden begrenzt. Ein abgelaufenes Token wird je Leseanfrage höchstens einmal erneuert.
 
-Bei Fehlern greift eine Wiederholsperre von 30 bis 900 Sekunden. Abgelehnte Zugangsdaten führen sofort zu 15 Minuten Pause, um Kontosperren durch wiederholte Anmeldungen zu vermeiden. Der normale Timer berücksichtigt diese Sperre. Erneutes Übernehmen der Konfiguration setzt die Sperre und die Sitzung zurück. Nicht wiederholt auf „Übernehmen“ klicken, um eine gesperrte Anmeldung erneut anzustoßen.
+Bei einem vorübergehenden Gesamtausfall greift eine automatische Wiederholpause von 10 bis 60 Sekunden. Abgelehnte Anmeldungen führen zu einer 15-minütigen Schutzpause. Erneutes Übernehmen einer korrigierten Konfiguration setzt Pause und Sitzung zurück.
 
 Verbindungsdetails, Zugangsdaten, Sitzungstoken und vollständige Geräteantworten werden nicht protokolliert und nicht an die Kachel übertragen. Die Verbindung verwendet ausschließlich HTTP. Weiterleitungen und Umgebungs-Proxys werden nicht verwendet; Antworten sind auf 2 MiB begrenzt. Das Modul hat eine feste Liste erlaubter Lese-Endpunkte. NAS-Passwörter werden als Instanzeigenschaft gespeichert und sind damit Bestandteil entsprechend geschützter Symcon-Konfigurationen und Backups.
 
@@ -139,7 +145,7 @@ Verbindungsdetails, Zugangsdaten, Sitzungstoken und vollständige Geräteantwort
 $erfolgreich = UGNAS_Update(12345);
 ```
 
-`UGNAS_SelectVariables` ist eine Hilfsfunktion für das Instanzformular. Sie ändert dessen aktuelle Auswahl; anschließend muss der Benutzer übernehmen. Die Kachel verwendet `Refresh` für die Aktualisierung und `SetTileMetricVisibility` für die gespeicherte Sichtbarkeit pro auswählbarem Messwert.
+`UGNAS_SelectVariables` ist eine Hilfsfunktion für das Instanzformular. Sie ändert dessen aktuelle Auswahl; anschließend muss der Benutzer übernehmen. Die Kachel verwendet `Refresh` für die Aktualisierung. Die Anzeigeauswahl wird in der Instanzkonfiguration gespeichert.
 
 ## Struktur
 

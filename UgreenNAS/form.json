@@ -209,6 +209,22 @@
           "type": "CheckBox",
           "name": "ShowControls",
           "caption": "Aktualisieren-Schaltfläche anzeigen"
+        },
+        {
+          "type": "List",
+          "name": "TileMetrics",
+          "caption": "Messwerte in der Kachel",
+          "rowCount": 8,
+          "add": false,
+          "delete": false,
+          "loadValuesFromConfiguration": false,
+          "onEdit": "$rows = []; foreach ($TileMetrics as $row) { $rows[] = $row; } UGNAS_RememberTileSelection($id, $rows);",
+          "columns": [
+            {"name": "Ident", "caption": "Ident", "width": "160px", "visible": false, "save": true},
+            {"name": "Name", "caption": "Messwert", "width": "auto"},
+            {"name": "Visible", "caption": "Anzeigen", "width": "100px", "edit": {"type": "CheckBox"}}
+          ],
+          "values": []
         }
       ]
     },

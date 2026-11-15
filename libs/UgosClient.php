@@ -54,6 +54,11 @@ final class UgosClient
         return json_encode(['token' => $this->token, 'cookies' => $this->cookies], JSON_THROW_ON_ERROR);
     }
 
+    public function hasSession(): bool
+    {
+        return $this->token !== '';
+    }
+
     public function connectionSummary(): string
     {
         if (!$this->httpResponded) {
@@ -183,7 +188,7 @@ final class UgosClient
             CURLOPT_CONNECTTIMEOUT_MS => min(4000, $remaining),
             CURLOPT_TIMEOUT_MS => min($this->timeout * 1000, $remaining),
             CURLOPT_HTTPHEADER => ['Accept: application/json', 'Content-Type: application/json'],
-            CURLOPT_USERAGENT => 'Symcon-UGREEN-Monitor/0.7',
+            CURLOPT_USERAGENT => 'Symcon-UGREEN-Monitor/0.8',
             CURLOPT_COOKIE => implode('; ', $cookies),
             CURLOPT_HEADERFUNCTION => function ($handle, string $line) use (&$headers): int {
                 $length = strlen($line);

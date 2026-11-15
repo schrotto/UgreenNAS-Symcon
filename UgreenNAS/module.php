@@ -15,7 +15,7 @@ class UgreenNAS extends IPSModuleStrict
             $this->RegisterPropertyBoolean($key, $default);
         }
         foreach (['Host' => '', 'Username' => '', 'Password' => '',
-            'Variables' => '[]', 'Theme' => 'auto', 'Title' => 'UGREEN NAS'] as $key => $default) {
+            'Variables' => '[]', 'TileMetrics' => '[]', 'Theme' => 'auto', 'Title' => 'UGREEN NAS'] as $key => $default) {
             $this->RegisterPropertyString($key, $default);
         }
         foreach (['Port' => 9999, 'Interval' => 60, 'Timeout' => 8, 'Accent' => 0x52D6B0,
@@ -26,7 +26,6 @@ class UgreenNAS extends IPSModuleStrict
         $this->RegisterAttributeString('Catalog', '{}');
         $this->RegisterAttributeString('Source', '');
         $this->RegisterAttributeString('Diagnostic', 'Noch keine Abfrage durchgeführt.');
-        $this->RegisterAttributeString('HiddenTileMetrics', '[]');
         $this->RegisterTimer('Poll', 0, 'UGNAS_Update($_IPS["TARGET"]);');
     }
 
@@ -35,8 +34,27 @@ class UgreenNAS extends IPSModuleStrict
         parent::Migrate($JSONData);
         $data = json_decode($JSONData);
         $config = $data->configuration ?? null;
-        if (!is_object($config) || !isset($config->BaseURL)) {
+        if (!is_object($config)) {
             return '';
+        }
+        $changed = false;
+        if (isset($data->attributes->HiddenTileMetrics)) {
+            $hidden = json_decode((string) $data->attributes->HiddenTileMetrics, true);
+            $existing = json_decode((string) ($config->TileMetrics ?? '[]'), true);
+            if (is_array($hidden) && empty($existing)) {
+                $selection = [];
+                foreach ($hidden as $ident) {
+                    if (is_string($ident) && $this->isSelectableTileMetric($ident)) {
+                        $selection[$ident] = ['Ident' => $ident, 'Visible' => false];
+                    }
+                }
+                $config->TileMetrics = json_encode(array_values($selection), JSON_THROW_ON_ERROR);
+            }
+            unset($data->attributes->HiddenTileMetrics);
+            $changed = true;
+        }
+        if (!isset($config->BaseURL)) {
+            return $changed ? json_encode($data, JSON_THROW_ON_ERROR) : '';
         }
         $oldUrl = $config->BaseURL;
         if (empty($config->Host) && is_string($oldUrl)) {
@@ -88,8 +106,10 @@ class UgreenNAS extends IPSModuleStrict
         $this->SetBuffer('NextAllowed', '0');
         $this->SetBuffer('LastAttempt', '0');
         $this->SetBuffer('Failures', '0');
+        $this->SetBuffer('AuthBlocked', '');
         $this->SetBuffer('Current', '0');
         $this->SetBuffer('FormRows', '');
+        $this->SetBuffer('TileFormRows', '');
         try {
             $source = '';
             if ($this->ReadPropertyString('Host') !== '' || $this->ReadPropertyBoolean('Enabled')) {
@@ -99,7 +119,6 @@ class UgreenNAS extends IPSModuleStrict
                 $this->WriteAttributeString('Snapshot', '{}');
                 $this->WriteAttributeString('Catalog', '{}');
                 $this->WriteAttributeString('Source', $source);
-                $this->WriteAttributeString('HiddenTileMetrics', '[]');
             }
             $this->configureVariables();
             $this->validateConfiguration();
@@ -173,47 +192,45 @@ class UgreenNAS extends IPSModuleStrict
         }
         $client = null;
         try {
-            $wait = max((int) $this->GetBuffer('NextAllowed'), (int) $this->GetBuffer('LastAttempt') + 5) - time();
+            // Ein manueller Test kann nach einem Transportfehler früher erneut prüfen.
+            $waitUntil = (int) $this->GetBuffer('LastAttempt') + 5;
+            if (!$testLogin || $this->GetBuffer('AuthBlocked') === '1') {
+                $waitUntil = max($waitUntil, (int) $this->GetBuffer('NextAllowed'));
+            }
+            $wait = $waitUntil - time();
             if ($wait > 0) {
                 return [false, 'Nächster Test in ' . $wait . ' s. Letzte Diagnose: ' . $this->ReadAttributeString('Diagnostic')];
             }
             $this->SetBuffer('LastAttempt', (string) time());
             $this->validateConfiguration();
             $client = $this->client($testLogin);
-            $machine = $client->read('/ugreen/v1/sysinfo/machine/common');
-            try {
-                $stats = $client->read('/ugreen/v1/taskmgr/stat/get_all');
-            } catch (UgosApiException $e) {
-                if (!in_array($e->getCode(), [404, 9404], true)) {
-                    throw $e;
-                }
-                $stats = $client->read('/ugreen/v1/taskmgr/stat/overview');
-            }
-            $overview = $stats['overview'] ?? $stats;
-            if (!isset($machine['common']) || !is_array($overview)
-                || (!isset($overview['cpu']) && !isset($overview['mem']))) {
-                throw new RuntimeException('Unbekanntes UGOS-Datenformat. Keine aktuellen Messwerte übernommen.');
-            }
             $warnings = [];
-            $optional = function (string $path, string $label, string $listKey = 'result') use ($client, &$warnings): ?array {
-                try {
-                    $result = $client->read($path);
-                    if (!is_array($result[$listKey] ?? null)) {
-                        throw new RuntimeException('Unbekanntes Listenformat.');
-                    }
-                    return $result;
-                } catch (Throwable $e) {
-                    if ($e instanceof UgosApiException && in_array($e->getCode(), [1003, 1024, 401], true)) {
-                        throw $e;
-                    }
-                    $warnings[] = $label . ': ' . $e->getMessage();
-                    return null;
-                }
+            $validStats = static function (array $data): bool {
+                $overview = $data['overview'] ?? $data;
+                return is_array($overview)
+                    && (is_array($overview['cpu'] ?? null) || is_array($overview['mem'] ?? null));
             };
-            $pools = $optional('/ugreen/v1/storage/pool/list', 'Speicherpools');
-            $disks = $optional('/ugreen/v2/storage/disk/list', 'Laufwerke');
-            $network = $optional('/ugreen/v1/taskmgr/stat/net', 'LAN-Statistik', 'series');
-            $snapshot = UgosTelemetry::normalize($machine, $stats, $pools, $disks, $network);
+            $stats = $this->readSection($client, '/ugreen/v1/taskmgr/stat/get_all', 'Ressourcenstatistik', $warnings, $validStats);
+            if ($stats === null) {
+                $stats = $this->readSection($client, '/ugreen/v1/taskmgr/stat/overview', 'Ressourcenübersicht', $warnings, $validStats);
+            }
+            $machine = $this->readSection($client, '/ugreen/v1/sysinfo/machine/common', 'Geräteinformationen', $warnings,
+                static fn (array $data): bool => is_array($data['common'] ?? null));
+            $validList = static fn (array $data): bool => is_array($data['result'] ?? null);
+            $pools = $this->readSection($client, '/ugreen/v1/storage/pool/list', 'Speicherpools', $warnings, $validList);
+            $disks = $this->readSection($client, '/ugreen/v2/storage/disk/list', 'Laufwerke', $warnings, $validList);
+            $network = $this->readSection($client, '/ugreen/v1/taskmgr/stat/net', 'LAN-Statistik', $warnings,
+                static fn (array $data): bool => is_array($data['series'] ?? null));
+            if ($machine === null && $stats === null && $pools === null && $disks === null && $network === null) {
+                throw new UgosApiException(implode(' ', $warnings));
+            }
+            $snapshot = UgosTelemetry::normalize($machine ?? [], $stats ?? [], $pools, $disks, $network);
+            if ($machine === null) {
+                $previous = $this->snapshot();
+                foreach (['name', 'model', 'version'] as $key) {
+                    $snapshot[$key] = $previous[$key] ?? '';
+                }
+            }
             $previousCatalog = $this->catalog();
             $snapshot['timestamp'] = time();
             $snapshot['warnings'] = $warnings;
@@ -230,9 +247,11 @@ class UgreenNAS extends IPSModuleStrict
             $this->WriteAttributeString('Catalog', json_encode($known, JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE));
             if (array_keys($previousCatalog) !== array_keys($this->catalog())) {
                 $this->refreshVariableForm();
+                $this->refreshTileMetricForm();
             }
             $this->SetBuffer('Session', $client->session());
             $this->SetBuffer('Failures', '0');
+            $this->SetBuffer('AuthBlocked', '');
             $this->SetBuffer('NextAllowed', '0');
             $this->SetBuffer('Current', '1');
             $this->SetStatus(102);
@@ -246,44 +265,51 @@ class UgreenNAS extends IPSModuleStrict
             $this->WriteAttributeString('Diagnostic', $report);
             return [true, $report];
         } catch (Throwable $e) {
-            $this->SetBuffer('Session', '');
+            $authFailed = $e instanceof UgosApiException && in_array($e->getCode(), [1003, 401, 1024], true);
+            $this->SetBuffer('Session', !$authFailed && $client?->hasSession() ? $client->session() : '');
+            $this->SetBuffer('AuthBlocked', $authFailed ? '1' : '');
             $failures = min(6, (int) $this->GetBuffer('Failures') + 1);
             $this->SetBuffer('Failures', (string) $failures);
-            $delay = $e instanceof UgosApiException && $e->getCode() === 1003 ? 900 : min(900, 15 * (2 ** $failures));
+            $delay = $authFailed ? 900 : min(60, 5 * (2 ** $failures));
             $this->SetBuffer('NextAllowed', (string) (time() + $delay));
             $this->SetStatus(202);
             $report = $e->getMessage();
             if ($client !== null) {
                 $report = $client->connectionSummary() . ' ' . $report;
             }
-            $report .= ' Nächster Versuch frühestens in ' . $delay . ' s.';
+            $report .= ' Nächster automatischer Versuch in ' . $delay . ' s.';
             $this->WriteAttributeString('Diagnostic', $report);
             $this->markOffline();
             return [false, $report];
         } finally {
-            $this->SetTimerInterval('Poll', max(15, $this->ReadPropertyInteger('Interval')) * 1000);
+            $retryAt = (int) $this->GetBuffer('NextAllowed');
+            $seconds = $retryAt > 0 ? max(1, $retryAt - time()) : max(15, $this->ReadPropertyInteger('Interval'));
+            $this->SetTimerInterval('Poll', $seconds * 1000);
             IPS_SemaphoreLeave('UGNAS_' . $this->InstanceID);
             $this->publish();
         }
     }
 
+    private function readSection(UgosClient $client, string $path, string $label, array &$warnings, callable $valid): ?array
+    {
+        try {
+            $data = $client->read($path);
+            if (!$valid($data)) {
+                throw new UgosApiException('Unbekanntes Datenformat.');
+            }
+            return $data;
+        } catch (UgosApiException $e) {
+            $message = $label . ': ' . $e->getMessage();
+            if (!$client->hasSession() || in_array($e->getCode(), [1003, 401, 1024], true)) {
+                throw new UgosApiException($message, $e->getCode(), $e);
+            }
+            $warnings[] = $message;
+            return null;
+        }
+    }
+
     public function RequestAction(string $Ident, mixed $Value): void
     {
-        if ($Ident === 'SetTileMetricVisibility' && $this->ReadPropertyBoolean('TileEnabled')
-            && is_array($Value) && is_string($Value['id'] ?? null) && is_bool($Value['visible'] ?? null)
-            && (in_array($Value['id'], UgosTelemetry::PRIMARY_METRIC_IDS, true)
-                || UgosTelemetry::isAdditionalMetric($Value['id']))
-            && isset($this->catalog()[$Value['id']])) {
-            $hidden = $this->hiddenTileMetrics();
-            if ($Value['visible']) {
-                $hidden = array_values(array_diff($hidden, [$Value['id']]));
-            } elseif (!in_array($Value['id'], $hidden, true)) {
-                $hidden[] = $Value['id'];
-            }
-            $this->WriteAttributeString('HiddenTileMetrics', json_encode($hidden, JSON_THROW_ON_ERROR));
-            $this->UpdateVisualizationValue($this->payload());
-            return;
-        }
         if ($Ident !== 'Refresh' || $Value !== true || !$this->ReadPropertyBoolean('TileEnabled')
             || !$this->ReadPropertyBoolean('ShowControls')) {
             throw new InvalidArgumentException('Nicht erlaubte Kachelaktion.');
@@ -482,10 +508,6 @@ class UgreenNAS extends IPSModuleStrict
     {
         $s = $this->snapshot();
         $catalog = $this->catalog();
-        $primaryMetrics = [];
-        foreach (UgosTelemetry::PRIMARY_METRIC_IDS as $ident) {
-            $primaryMetrics[] = ['id' => $ident, 'name' => $catalog[$ident]['name']];
-        }
         $extraMetrics = [];
         foreach ($catalog as $ident => $metric) {
             if (UgosTelemetry::isAdditionalMetric($ident)) {
@@ -511,7 +533,7 @@ class UgreenNAS extends IPSModuleStrict
             }
         }
         return json_encode(['enabled' => $enabled, 'fresh' => $fresh, 'data' => $s, 'alerts' => $alerts,
-            'primaryMetrics' => $primaryMetrics, 'extraMetrics' => $extraMetrics, 'hiddenTileMetrics' => $this->hiddenTileMetrics(),
+            'extraMetrics' => $extraMetrics, 'hiddenTileMetrics' => $this->hiddenTileMetrics(),
             'diagnostic' => $this->ReadAttributeString('Diagnostic'), 'now' => time(),
             'staleAfter' => max(45, $this->ReadPropertyInteger('Interval') * 2),
             'nextAllowed' => (int) $this->GetBuffer('NextAllowed'),
@@ -528,7 +550,50 @@ class UgreenNAS extends IPSModuleStrict
 
     private function hiddenTileMetrics(): array
     {
-        return json_decode($this->ReadAttributeString('HiddenTileMetrics'), true) ?: [];
+        return array_keys(array_filter($this->tileSelection(), static fn (bool $visible): bool => !$visible));
+    }
+
+    private function isSelectableTileMetric(string $ident): bool
+    {
+        return in_array($ident, UgosTelemetry::PRIMARY_METRIC_IDS, true) || UgosTelemetry::isAdditionalMetric($ident);
+    }
+
+    private function tileSelection(?array $rows = null): array
+    {
+        $rows ??= json_decode($this->ReadPropertyString('TileMetrics'), true) ?: [];
+        $selection = [];
+        foreach ($rows as $row) {
+            if (is_string($row['Ident'] ?? null) && is_bool($row['Visible'] ?? null)
+                && $this->isSelectableTileMetric($row['Ident'])) {
+                $selection[$row['Ident']] = $row['Visible'];
+            }
+        }
+        return $selection;
+    }
+
+    public function RememberTileSelection(array $Rows): void
+    {
+        $this->SetBuffer('TileFormRows', json_encode($Rows, JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE));
+    }
+
+    private function tileMetricRows(?array $draft = null): array
+    {
+        $selection = $this->tileSelection($draft);
+        $rows = [];
+        foreach ($this->catalog() as $ident => $metric) {
+            if ($this->isSelectableTileMetric($ident)) {
+                $rows[] = ['Ident' => $ident, 'Name' => $metric['name'], 'Visible' => $selection[$ident] ?? true];
+            }
+        }
+        return $rows;
+    }
+
+    private function refreshTileMetricForm(): void
+    {
+        $draft = json_decode($this->GetBuffer('TileFormRows'), true);
+        $rows = $this->tileMetricRows(is_array($draft) ? $draft : null);
+        $this->RememberTileSelection($rows);
+        $this->UpdateFormField('TileMetrics', 'values', json_encode($rows, JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE));
     }
 
     private function publish(): void
@@ -624,6 +689,14 @@ class UgreenNAS extends IPSModuleStrict
         $this->SetBuffer('FormRows', json_encode($rows, JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE));
         $form['elements'][1]['items'][1]['values'] = $rows;
         $form['elements'][1]['items'][0]['caption'] = $this->variableSummary($rows);
+        $tileRows = $this->tileMetricRows();
+        $this->RememberTileSelection($tileRows);
+        foreach ($form['elements'][2]['items'] as &$item) {
+            if (($item['name'] ?? '') === 'TileMetrics') {
+                $item['values'] = $tileRows;
+                break;
+            }
+        }
         $form['actions'][0]['caption'] = $this->ReadAttributeString('Diagnostic');
         return json_encode($form, JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE);
     }
