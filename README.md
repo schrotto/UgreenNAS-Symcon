@@ -1,6 +1,6 @@
 # UGREEN NAS Monitoring für IP-Symcon
 
-Version **0.10, Build 10 – Testversion**, Stand 15.11.2026.
+Version **0.11, Build 11 – Testversion**, Stand 15.11.2026.
 
 Lokales Monitoring für UGREEN-NAS-Geräte mit UGOS Pro über deren Webschnittstelle. Es sind keine SSH-Verbindung, kein Docker-Container und kein Agent auf der NAS erforderlich. Die Bibliothek ist für IP-Symcon **ab 8.1** vorbereitet und verwendet `IPSModuleStrict` und das native HTML-SDK. Die tatsächlich eingesetzte Symcon-Version wurde noch nicht mitgeteilt.
 
@@ -41,6 +41,10 @@ Für die Installation über **Module Control → Hinzufügen** die Repository-Ad
 5. Instanz als Kachel in die Symcon-Kachelvisualisierung aufnehmen. Keine HTML-Box anlegen. Nach einem Modulupdate die geöffnete Visualisierung neu laden, damit Änderungen am HTML/CSS/JavaScript wirksam werden.
 
 Anmeldung mit RSA-Passwortverschlüsselung, Sitzungstoken und Cookies erfolgt automatisch. Die notwendige Freigabe eines neuen Clients bei **Zwei-Faktor-Anmeldung wird noch nicht unterstützt**. Ein solches Konto liefert eine Diagnose; die Zwei-Faktor-Prüfung wird nicht umgangen. Für produktive Nutzung mit diesem Konto muss der Freigabeablauf zunächst ergänzt werden.
+
+## Änderungen in Build 11
+
+Wenn freier RAM oder RAM-Cache in der Ressourcenstatistik fehlen, versucht das Modul eine separate lesende HTTP-Abfrage beim UGOS-Task-Manager. Es ergänzt vorhandene Byte-Werte und meldet in **Verbindung testen**, welche Messwerte noch fehlen. Die separate Abfrage ist auf dem DXP8800 Plus mit UGOS Pro 1.20.0.0142 noch zu bestätigen. [API-Referenz des NAS-Monitor-Projekts](https://gitlab.com/K-22/nas-monitor-interface/-/blob/main/docs/API.md)
 
 ## Änderungen in Build 10
 

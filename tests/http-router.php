@@ -37,14 +37,25 @@ if (str_starts_with($token, 'invalidjson')) {
     echo '<html>keine API</html>';
     exit;
 }
+if ($path === '/ugreen/v1/taskmgr/stat/memory') {
+    if (str_starts_with($token, 'ramdetails-')) {
+        $response(['structure' => ['free' => '0', 'cache' => 3221225472]]);
+    }
+    if (str_starts_with($token, 'rampartial-')) {
+        $response(['mem' => ['structure' => ['free' => 1, 'cache' => 1610612736]]]);
+    }
+    http_response_code(404);
+    $response([]);
+}
 if (str_starts_with($token, 'slow-') && in_array($path, ['/ugreen/v1/taskmgr/stat/get_all', '/ugreen/v1/sysinfo/machine/common'], true)) {
     usleep(2200000);
 }
 if (str_starts_with($token, 'tasktimeout-') && str_starts_with($path, '/ugreen/v1/taskmgr/stat/')) {
     usleep(2200000);
 }
-if ((str_starts_with($token, 'desktoponly-') || str_starts_with($token, 'wsbad-'))
-    && str_starts_with($path, '/ugreen/v1/taskmgr/stat/')) {
+$desktopMonitoring = str_starts_with($token, 'desktoponly-') || str_starts_with($token, 'wsbad-')
+    || str_starts_with($token, 'ramdetails-');
+if ($desktopMonitoring && str_starts_with($path, '/ugreen/v1/taskmgr/stat/')) {
     usleep(2200000);
 }
 if (preg_match('/^wslive-\d+$/D', $token) && str_starts_with($path, '/ugreen/v1/taskmgr/stat/')) {
@@ -85,13 +96,13 @@ if ($path === '/ugreen/v1/desktop/components/data' && ($_GET['id'] ?? '') === 'd
     if (str_starts_with($token, 'partial-')) {
         $response([], 1024);
     }
-    if (str_starts_with($token, 'desktoponly-') || str_starts_with($token, 'wsbad-')) {
+    if ($desktopMonitoring) {
         $response(['cpu_usage_rate' => 0, 'ram_usage_rate' => '35.11', 'upload_speed' => ['raw' => 7436],
             'download_speed' => ['raw' => '3480', 'unit' => 'KB/s', 'value' => 3.4]]);
     }
 }
 $f = telemetryFixtures();
-if (str_starts_with($token, 'desktoponly-') || str_starts_with($token, 'wsbad-')) {
+if ($desktopMonitoring) {
     $f['machine']['hardware']['cpu'][0]['temperature'] = 52;
 }
 if (str_starts_with($token, 'machinefirst-')) {
@@ -101,6 +112,9 @@ if (str_starts_with($token, 'incomplete-') && $path === '/ugreen/v1/taskmgr/stat
     $f['stats']['overview']['cpu'][0] = ['used_percent' => 0];
     unset($f['stats']['overview']['mem']);
     $f['stats']['net']['series'][0] = ['send_rate' => 1200];
+}
+if (str_starts_with($token, 'rampartial-')) {
+    unset($f['stats']['mem']['structure']['cache']);
 }
 $map = ['/ugreen/v1/sysinfo/machine/common' => 'machine', '/ugreen/v1/taskmgr/stat/get_all' => 'stats',
     '/ugreen/v1/taskmgr/stat/overview' => 'stats', '/ugreen/v1/storage/pool/list' => 'pools', '/ugreen/v2/storage/disk/list' => 'disks',

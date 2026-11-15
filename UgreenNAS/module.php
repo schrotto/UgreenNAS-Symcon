@@ -230,6 +230,10 @@ class UgreenNAS extends IPSModuleStrict
             $this->SetBuffer('LiveStatistics', $subscription !== null && $stats !== null ? '1' : '');
             $warnings = array_merge($warnings, $statsWarnings);
             $desktop = $statsTimedOut ? $this->readDesktopStatistics($client, $warnings) : null;
+            $memory = [];
+            if ($machine !== null || $stats !== null || $pools !== null || $disks !== null || $desktop !== null) {
+                $memory = $this->readMissingMemoryStatistics($client, $stats['mem']['structure'] ?? null, $warnings);
+            }
             $stats = $this->completeResourceOverview($client, $stats, $warnings);
             $network = null;
             [$send, $receive] = UgosTelemetry::lanRates($stats['net'] ?? null);
@@ -247,6 +251,11 @@ class UgreenNAS extends IPSModuleStrict
             }
             if ($machine === null && $stats === null && $pools === null && $disks === null && $network === null && $desktop === null) {
                 throw new UgosApiException(implode(' ', $warnings));
+            }
+            if ($memory !== []) {
+                $details = is_array($stats['mem']['structure'] ?? null) ? $stats['mem']['structure'] : [];
+                $stats['mem'] = is_array($stats['mem'] ?? null) ? $stats['mem'] : [];
+                $stats['mem']['structure'] = array_replace($details, $memory);
             }
             $snapshot = UgosTelemetry::normalize($machine ?? [], $stats ?? [], $pools, $disks, $network, $desktop ?? []);
             $unavailable = [];
@@ -298,6 +307,9 @@ class UgreenNAS extends IPSModuleStrict
             }
             if ($desktop !== null) {
                 $report .= ' Desktop-Monitoring liefert Ersatzwerte.';
+            }
+            if ($memory !== []) {
+                $report .= ' Separate RAM-Abfrage liefert ' . (count($memory) === 1 ? '1 Messwert.' : '2 Messwerte.');
             }
             if ($warnings !== []) {
                 $report .= ' Teilabruf: ' . implode(' ', $warnings);
@@ -354,6 +366,32 @@ class UgreenNAS extends IPSModuleStrict
         } catch (UgosApiException $e) {
             $warnings[] = 'Desktop-Monitoring: ' . $e->getMessage();
             return null;
+        }
+    }
+
+    private function readMissingMemoryStatistics(UgosClient $client, mixed $details, array &$warnings): array
+    {
+        $missing = array_filter(['free', 'cache'], static fn (string $key): bool => UgosTelemetry::number($details[$key] ?? null) === null);
+        if ($missing === []) {
+            return [];
+        }
+        try {
+            $data = $client->readMemoryStatistics();
+            $details = $data['structure'] ?? $data['mem']['structure'] ?? $data;
+            $memory = [];
+            foreach ($missing as $key) {
+                $value = UgosTelemetry::number($details[$key] ?? null);
+                if ($value !== null) {
+                    $memory[$key] = $value;
+                }
+            }
+            if ($memory === []) {
+                $warnings[] = 'Separate RAM-Abfrage: keine auswertbaren Werte für freien RAM oder Cache.';
+            }
+            return $memory;
+        } catch (UgosApiException $e) {
+            $warnings[] = 'Separate RAM-Abfrage: ' . $e->getMessage();
+            return [];
         }
     }
 

@@ -76,6 +76,11 @@ final class UgosClient
         return $this->readOnce(self::DESKTOP_MONITORING, 4000);
     }
 
+    public function readMemoryStatistics(): array
+    {
+        return $this->readOnce('/ugreen/v1/taskmgr/stat/memory', 2500);
+    }
+
     public function connectionSummary(): string
     {
         if (!$this->httpResponded) {

@@ -261,6 +261,29 @@ verify(str_contains($report, 'Desktop-Monitoring liefert Ersatzwerte') && $metri
 verify(!str_contains($report, 'LAN-Statistik') && str_contains($report, 'Ohne aktuellen Messwert: Freier RAM, RAM-Cache')
     && $metrics['RAMFree'] === null && $metrics['RAMCache'] === null,
     'Desktop-Raten ersparen eine separate LAN-Abfrage. RAM-Details bleiben ohne Quelle unbekannt');
+verify(str_contains($report, 'Separate RAM-Abfrage: NAS antwortet mit HTTP 404')
+    && IPS_GetInstance($id)['InstanceStatus'] === 102, 'Fehlende separate RAM-Abfrage unterbricht die übrigen Daten nicht');
+
+IPS_SetProperty($id, 'Username', 'ramdetails');
+IPS_ApplyChanges($id);
+$report = $module->TestConnection();
+$tileData = json_decode((new ReflectionMethod($module, 'payload'))->invoke($module), true);
+$metrics = array_column($tileData['data']['metrics'], 'value', 'id');
+verify(substr_count($report, 'cURL 28') === 2 && str_contains($report, 'Separate RAM-Abfrage liefert 2 Messwerte')
+    && !str_contains($report, 'Ohne aktuellen Messwert') && $metrics['CPU'] === 0
+    && $metrics['RAMFree'] === 0 && $metrics['RAMCache'] === 3221225472,
+    'Separate RAM-Abfrage liefert freie Bytes und Cache-Bytes trotz Zeitlimits der Sammelstatistik');
+verify(GetValue(IPS_GetObjectIDByIdent('RAMFree', $id)) === 0.0
+    && GetValue(IPS_GetObjectIDByIdent('RAMCache', $id)) === 3221225472.0,
+    'Die vorhandenen RAM-Variablen erhalten die gemeldeten Byte-Rohwerte');
+
+IPS_SetProperty($id, 'Username', 'rampartial');
+IPS_ApplyChanges($id);
+$report = $module->TestConnection();
+$tileData = json_decode((new ReflectionMethod($module, 'payload'))->invoke($module), true);
+$metrics = array_column($tileData['data']['metrics'], 'value', 'id');
+verify($metrics['RAMFree'] === 8589934592 && $metrics['RAMCache'] === 1610612736,
+    'Die separate RAM-Abfrage ergänzt einen fehlenden Cache-Wert und erhält den freien RAM aus der Sammelstatistik');
 
 IPS_SetProperty($id, 'Username', 'allfail');
 IPS_ApplyChanges($id);
