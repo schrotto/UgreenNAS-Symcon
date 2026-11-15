@@ -40,6 +40,22 @@ if (str_starts_with($token, 'invalidjson')) {
 if (str_starts_with($token, 'slow-') && in_array($path, ['/ugreen/v1/taskmgr/stat/get_all', '/ugreen/v1/sysinfo/machine/common'], true)) {
     usleep(2200000);
 }
+if (str_starts_with($token, 'tasktimeout-') && str_starts_with($path, '/ugreen/v1/taskmgr/stat/')) {
+    usleep(2200000);
+}
+if (preg_match('/^machinefirst-\d+$/D', $token)) {
+    $first = $directory . '/' . $token;
+    if (!is_file($first)) {
+        file_put_contents($first, $path);
+    }
+    if (str_starts_with($path, '/ugreen/v1/taskmgr/') && file_get_contents($first) !== '/ugreen/v1/sysinfo/machine/common') {
+        usleep(2200000);
+    }
+    if ($path === '/ugreen/v1/taskmgr/stat/net') {
+        http_response_code(503);
+        $response([]);
+    }
+}
 if (str_starts_with($token, 'allfail-')) {
     http_response_code(503);
     $response([]);
@@ -56,6 +72,14 @@ if (str_starts_with($token, 'partial-') && $path === '/ugreen/v1/taskmgr/stat/ne
     $response([]);
 }
 $f = telemetryFixtures();
+if (str_starts_with($token, 'machinefirst-')) {
+    $f['stats']['net'] = $f['network'];
+}
+if (str_starts_with($token, 'incomplete-') && $path === '/ugreen/v1/taskmgr/stat/get_all') {
+    $f['stats']['overview']['cpu'][0] = ['used_percent' => 0];
+    unset($f['stats']['overview']['mem']);
+    $f['stats']['net']['series'][0] = ['send_rate' => 1200];
+}
 $map = ['/ugreen/v1/sysinfo/machine/common' => 'machine', '/ugreen/v1/taskmgr/stat/get_all' => 'stats',
     '/ugreen/v1/taskmgr/stat/overview' => 'stats', '/ugreen/v1/storage/pool/list' => 'pools', '/ugreen/v2/storage/disk/list' => 'disks',
     '/ugreen/v1/taskmgr/stat/net' => 'network'];

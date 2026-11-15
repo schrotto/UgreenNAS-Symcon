@@ -216,6 +216,37 @@ verify($tileData['data']['metrics']['CPU']['value'] === 17.4
     && $tileData['data']['metrics']['Uptime']['value'] === null
     && count($tileData['data']['disks']) === 2, 'Ressourcenübersicht und Laufwerksdaten bleiben bei zwei langsamen Teilabfragen verfügbar');
 
+IPS_SetProperty($id, 'Username', 'machinefirst');
+IPS_ApplyChanges($id);
+$report = $module->TestConnection();
+$tileData = json_decode((new ReflectionMethod($module, 'payload'))->invoke($module), true);
+$metrics = array_column($tileData['data']['metrics'], 'value', 'id');
+verify(!str_contains($report, 'Teilabruf') && $metrics['CPU'] === 17.4 && $metrics['RAM'] === 38.2,
+    'Geräteinformationen werden vor der Ressourcenstatistik mit derselben Sitzung gelesen');
+verify($metrics['LANSend'] === 12500.5 && $metrics['LANReceive'] === 0
+    && GetValue($lanId) === 12500.5, 'LAN-Gesamtraten aus get_all aktualisieren Kachel und Variablen ohne separate LAN-Abfrage');
+
+IPS_SetProperty($id, 'Username', 'incomplete');
+IPS_ApplyChanges($id);
+$report = $module->TestConnection();
+$tileData = json_decode((new ReflectionMethod($module, 'payload'))->invoke($module), true);
+$metrics = array_column($tileData['data']['metrics'], 'value', 'id');
+verify(!str_contains($report, 'Teilabruf') && $metrics['CPU'] === 0 && $metrics['RAM'] === 38.2
+    && $metrics['CPUTemperature'] === 49 && $metrics['RAMFree'] === 8589934592,
+    'Ressourcenübersicht ergänzt fehlende Werte und erhält vorhandene Werte und Speicherdetails');
+verify($metrics['LANSend'] === 1200 && $metrics['LANReceive'] === 0,
+    'Separate LAN-Statistik ergänzt eine fehlende Gesamtrate');
+
+IPS_SetProperty($id, 'Username', 'tasktimeout');
+IPS_ApplyChanges($id);
+$report = $module->TestConnection();
+$tileData = json_decode((new ReflectionMethod($module, 'payload'))->invoke($module), true);
+verify(substr_count($report, 'cURL 28') === 3 && str_contains($report, 'Ohne aktuellen Messwert: CPU-Auslastung, RAM-Auslastung')
+    && count($tileData['data']['pools']) === 1 && count($tileData['data']['disks']) === 2,
+    'Drei Ressourcen-Timeouts lassen Speicher- und Laufwerksdaten verfügbar und benennen die fehlenden Messwerte');
+verify($tileData['data']['metrics']['LANSend']['value'] === null && GetValue($lanId) === 1200.0,
+    'Fehlende LAN-Daten überschreiben die gespeicherte Variable nicht mit null oder 0');
+
 IPS_SetProperty($id, 'Username', 'allfail');
 IPS_ApplyChanges($id);
 $report = $module->TestConnection();

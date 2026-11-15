@@ -205,26 +205,36 @@ class UgreenNAS extends IPSModuleStrict
             $this->validateConfiguration();
             $client = $this->client($testLogin);
             $warnings = [];
-            $validStats = static function (array $data): bool {
-                $overview = $data['overview'] ?? $data;
-                return is_array($overview)
-                    && (is_array($overview['cpu'] ?? null) || is_array($overview['mem'] ?? null));
-            };
-            $stats = $this->readSection($client, '/ugreen/v1/taskmgr/stat/get_all', 'Ressourcenstatistik', $warnings, $validStats);
-            if ($stats === null) {
-                $stats = $this->readSection($client, '/ugreen/v1/taskmgr/stat/overview', 'Ressourcenübersicht', $warnings, $validStats);
-            }
             $machine = $this->readSection($client, '/ugreen/v1/sysinfo/machine/common', 'Geräteinformationen', $warnings,
                 static fn (array $data): bool => is_array($data['common'] ?? null));
+            $stats = $this->readSection($client, '/ugreen/v1/taskmgr/stat/get_all', 'Ressourcenstatistik', $warnings,
+                static fn (array $data): bool => is_array($data['overview'] ?? null) || is_array($data['cpu'] ?? null)
+                    || is_array($data['mem'] ?? null) || is_array($data['disk']['series'] ?? null)
+                    || is_array($data['net']['series'] ?? null));
             $validList = static fn (array $data): bool => is_array($data['result'] ?? null);
             $pools = $this->readSection($client, '/ugreen/v1/storage/pool/list', 'Speicherpools', $warnings, $validList);
             $disks = $this->readSection($client, '/ugreen/v2/storage/disk/list', 'Laufwerke', $warnings, $validList);
-            $network = $this->readSection($client, '/ugreen/v1/taskmgr/stat/net', 'LAN-Statistik', $warnings,
-                static fn (array $data): bool => is_array($data['series'] ?? null));
+            $stats = $this->completeResourceOverview($client, $stats, $warnings);
+            $network = null;
+            $combinedRates = UgosTelemetry::lanRates($stats['net'] ?? null);
+            if (in_array(null, $combinedRates, true)) {
+                $network = $this->readSection($client, '/ugreen/v1/taskmgr/stat/net', 'LAN-Statistik', $warnings,
+                    static fn (array $data): bool => UgosTelemetry::lanRates($data) !== [null, null]);
+            }
             if ($machine === null && $stats === null && $pools === null && $disks === null && $network === null) {
                 throw new UgosApiException(implode(' ', $warnings));
             }
             $snapshot = UgosTelemetry::normalize($machine ?? [], $stats ?? [], $pools, $disks, $network);
+            $unavailable = [];
+            foreach (['CPU', 'RAM', 'CPUTemperature', 'RAMFree', 'RAMCache', 'LANSend', 'LANReceive'] as $ident) {
+                $metric = $snapshot['metrics'][$ident];
+                if ($metric['value'] === null) {
+                    $unavailable[] = $metric['name'];
+                }
+            }
+            if ($unavailable !== []) {
+                $warnings[] = 'Ohne aktuellen Messwert: ' . implode(', ', $unavailable) . '.';
+            }
             if ($machine === null) {
                 $previous = $this->snapshot();
                 foreach (['name', 'model', 'version'] as $key) {
@@ -288,6 +298,34 @@ class UgreenNAS extends IPSModuleStrict
             IPS_SemaphoreLeave('UGNAS_' . $this->InstanceID);
             $this->publish();
         }
+    }
+
+    private function completeResourceOverview(UgosClient $client, ?array $stats, array &$warnings): ?array
+    {
+        $overview = is_array($stats['overview'] ?? null) ? $stats['overview'] : ($stats ?? []);
+        if (UgosTelemetry::number($overview['cpu'][0]['used_percent'] ?? null, 0, 100) !== null
+            && UgosTelemetry::number($overview['mem'][0]['used_percent'] ?? null, 0, 100) !== null
+            && UgosTelemetry::number($overview['cpu'][0]['temp'] ?? null, -20, 130) !== null) {
+            return $stats;
+        }
+        $fallback = $this->readSection($client, '/ugreen/v1/taskmgr/stat/overview', 'Ressourcenübersicht', $warnings,
+            static fn (array $data): bool => is_array($data['cpu'] ?? null) || is_array($data['mem'] ?? null));
+        if ($fallback === null) {
+            return $stats;
+        }
+        // Detaildaten aus get_all behalten und nur fehlende Werte aus der Übersicht ergänzen.
+        $result = array_replace($fallback, $overview);
+        foreach ([['cpu', 'used_percent', 0, 100], ['cpu', 'temp', -20, 130], ['mem', 'used_percent', 0, 100]] as [$key, $field, $min, $max]) {
+            $value = UgosTelemetry::number($fallback[$key][0][$field] ?? null, $min, $max);
+            if ($value !== null && UgosTelemetry::number($result[$key][0][$field] ?? null, $min, $max) === null) {
+                $entry = $result[$key][0] ?? null;
+                $result[$key] = is_array($result[$key] ?? null) ? $result[$key] : [];
+                $result[$key][0] = is_array($entry) ? $entry : [];
+                $result[$key][0][$field] = $value;
+            }
+        }
+        $stats['overview'] = $result;
+        return $stats;
     }
 
     private function readSection(UgosClient $client, string $path, string $label, array &$warnings, callable $valid): ?array

@@ -1,6 +1,6 @@
 # UGREEN NAS Monitoring für IP-Symcon
 
-Version **0.8, Build 8 – Testversion**, Stand 15.11.2026.
+Version **0.9, Build 9 – Testversion**, Stand 15.11.2026.
 
 Lokales Monitoring für UGREEN-NAS-Geräte mit UGOS Pro über deren Webschnittstelle. Es sind keine SSH-Verbindung, kein Docker-Container und kein Agent auf der NAS erforderlich. Die Bibliothek ist für IP-Symcon **ab 8.1** vorbereitet und verwendet `IPSModuleStrict` und das native HTML-SDK. Die tatsächlich eingesetzte Symcon-Version wurde noch nicht mitgeteilt.
 
@@ -41,6 +41,12 @@ Für die Installation über **Module Control → Hinzufügen** die Repository-Ad
 5. Instanz als Kachel in die Symcon-Kachelvisualisierung aufnehmen. Keine HTML-Box anlegen. Nach einem Modulupdate die geöffnete Visualisierung neu laden, damit Änderungen am HTML/CSS/JavaScript wirksam werden.
 
 Anmeldung mit RSA-Passwortverschlüsselung, Sitzungstoken und Cookies erfolgt automatisch. Die notwendige Freigabe eines neuen Clients bei **Zwei-Faktor-Anmeldung wird noch nicht unterstützt**. Ein solches Konto liefert eine Diagnose; die Zwei-Faktor-Prüfung wird nicht umgangen. Für produktive Nutzung mit diesem Konto muss der Freigabeablauf zunächst ergänzt werden.
+
+## Änderungen in Build 9
+
+Der HTTP-Abruf liest die Geräteinformationen wieder vor der Ressourcenstatistik. Fehlen CPU-Auslastung, CPU-Temperatur oder RAM-Auslastung in der Statistik, ergänzt die Ressourcenübersicht diese Werte, soweit verfügbar. LAN-Gesamtraten werden direkt aus der Ressourcenstatistik gelesen. Bei fehlenden Raten ergänzt die separate LAN-Abfrage die Antwort. [Home-Assistant-Integration, LAN in der Ressourcenstatistik](https://github.com/Tom-Bom-badil/home-assistant_ugreen-nas/blob/main/custom_components/ugreen/api.py#L794-L800)
+
+Bei Zeitlimits bleiben erfolgreiche Speicher- und Laufwerksabrufe nutzbar. **Verbindung testen** nennt fehlende System- und LAN-Messwerte. Die Sichtbarkeit der Messwerte stellst du in der Modulkonfiguration unter **Premium-Visualisierung → Messwerte in der Kachel** ein.
 
 ## Änderungen in Build 8
 
@@ -129,7 +135,7 @@ Die Kachel zeigt Daten nach Ablauf von `max(45 Sekunden, 2 × Intervall)` als ve
 
 ## Kommunikation und Fehlerbehandlung
 
-Pro Poll werden Systeminformationen, Statistiken, Speicherpools und Laufwerke gelesen. `taskmgr/stat/get_all` hat für HTTP 404 bzw. UGOS-Code 9404 einen Rückfall auf `taskmgr/stat/overview`. Fehler optionaler Speicherendpunkte ergeben eine Teildiagnose; unbekannte Formate werden nicht in scheinbar gültige Messwerte umgewandelt.
+Pro Poll werden Systeminformationen, Statistiken, Speicherpools und Laufwerke gelesen. Bei fehlenden CPU- oder RAM-Grundwerten ergänzt `taskmgr/stat/overview` die ausführliche Ressourcenstatistik. Fehler einzelner Endpunkte ergeben eine Teildiagnose. Nur gültige Messwerte werden übernommen.
 
 Mindestintervall 15 Sekunden, Standard 60 Sekunden. Anfragen haben ein konfigurierbares Zeitlimit von 2–30 Sekunden; ein kompletter Durchlauf ist zusätzlich auf höchstens 55 Sekunden begrenzt. Zeitgleiche Polls werden per Symcon-Semaphore verhindert; manuelle Wiederholungen innerhalb von 5 Sekunden werden begrenzt. Ein abgelaufenes Token wird je Leseanfrage höchstens einmal erneuert.
 

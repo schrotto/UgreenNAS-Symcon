@@ -52,6 +52,12 @@ final class UgosTelemetry
         return ['total' => $total, 'used' => $used, 'percent' => 100 * $used / $total];
     }
 
+    public static function lanRates(mixed $network): array
+    {
+        $summary = $network['series'][0] ?? null;
+        return [self::number($summary['send_rate'] ?? null), self::number($summary['recv_rate'] ?? null)];
+    }
+
     public static function normalize(array $machine, array $stats, ?array $pools, ?array $disks, ?array $network = null): array
     {
         $overview = $stats['overview'] ?? $stats;
@@ -66,8 +72,10 @@ final class UgosTelemetry
         $add('CPUTemperature', 'CPU-Temperatur', 2, '°C', self::number($overview['cpu'][0]['temp'] ?? null, -20, 130));
         $uptime = self::number($common['run_time'] ?? null, 0, 315576000);
         $add('Uptime', 'Betriebszeit', 1, 's', $uptime === null ? null : (int) $uptime);
-        $add('LANSend', 'LAN senden (gesamt)', 2, 'B/s', self::number($network['series'][0]['send_rate'] ?? null));
-        $add('LANReceive', 'LAN empfangen (gesamt)', 2, 'B/s', self::number($network['series'][0]['recv_rate'] ?? null));
+        [$send, $receive] = self::lanRates($stats['net'] ?? null);
+        [$fallbackSend, $fallbackReceive] = self::lanRates($network);
+        $add('LANSend', 'LAN senden (gesamt)', 2, 'B/s', $send ?? $fallbackSend);
+        $add('LANReceive', 'LAN empfangen (gesamt)', 2, 'B/s', $receive ?? $fallbackReceive);
         $add('RAMFree', 'Freier RAM', 2, 'B', self::number($stats['mem']['structure']['free'] ?? null));
         $add('RAMCache', 'RAM-Cache', 2, 'B', self::number($stats['mem']['structure']['cache'] ?? null));
         foreach (['cpu_fan' => 'CPU-Lüfter', 'device_fan' => 'Gehäuselüfter'] as $kind => $label) {
