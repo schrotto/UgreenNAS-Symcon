@@ -77,7 +77,7 @@ $initialRows[0]['Name'] = 'Noch nicht gespeichert';
 $initialRows[0]['Enabled'] = true;
 $module->RememberVariableSelection($initialRows);
 $report = $module->TestConnection();
-verify(str_contains($report, 'Antwort erhalten') && str_contains($report, 'Anmeldung: erfolgreich') && str_contains($report, '20 Messwerte'), 'Verbindungstest meldet HTTP, neue Anmeldung und Datenfunde');
+verify(str_contains($report, 'Antwort erhalten') && str_contains($report, 'Anmeldung: erfolgreich') && str_contains($report, '18 Messwerte'), 'Verbindungstest meldet HTTP, neue Anmeldung und Datenfunde');
 $liveRows = json_decode((new ReflectionMethod($module, 'GetBuffer'))->invoke($module, 'FormRows'), true);
 verify(count($liveRows) === 20, 'Erste Erkennung ergänzt offene Variablenliste ohne erneutes Öffnen');
 verify($liveRows[0]['Name'] === 'Noch nicht gespeichert' && $liveRows[0]['Enabled'], 'Erkennung erhält noch nicht übernommene Auswahl und Namen');
@@ -97,6 +97,11 @@ verify(!str_contains($html, '</script><script>alert(1)'), 'Initialdaten sicher g
 IPS_SetProperty($id, 'Enabled', false);
 IPS_ApplyChanges($id);
 verify(json_decode((new ReflectionMethod($module, 'payload'))->invoke($module), true)['fresh'] === false, 'Deaktivierung macht alte Daten ungültig');
+$readLog = getenv('UGNAS_TEST_TMP') . '/reads';
+$readsBefore = file_get_contents($readLog);
+verify(!$module->Update() && str_contains($module->TestConnection(), 'Überwachung aktivieren')
+    && (new ReflectionMethod($module, 'GetTimerInterval'))->invoke($module, 'Poll') === 0
+    && file_get_contents($readLog) === $readsBefore, 'Deaktivierung stoppt Timer, Update und Verbindungstest');
 IPS_SetProperty($id, 'Enabled', true);
 IPS_ApplyChanges($id);
 verify(json_decode((new ReflectionMethod($module, 'payload'))->invoke($module), true)['fresh'] === false, 'Reaktivierung benötigt neue Messung');
@@ -152,8 +157,8 @@ IPS_SetProperty($id, 'Username', 'partial');
 IPS_ApplyChanges($id);
 $report = $module->TestConnection();
 verify(str_contains($report, 'Anmeldung: erfolgreich') && str_contains($report, 'Teilabruf: Laufwerke') && str_contains($report, 'Leserechte'), 'Verbindungstest meldet Teilabrufe und fehlende Leserechte');
-verify(str_contains($report, 'LAN-Statistik') && str_contains($report, 'HTTP 404') && IPS_GetInstance($id)['InstanceStatus'] === 102, 'Fehlende LAN-Statistik lässt übrige Messungen weiterlaufen');
-verify(str_contains($report, 'Desktop-Monitoring: UGOS-Sitzung ist abgelaufen') && !str_contains($report, 'automatischer Versuch'),
+verify(str_contains($report, 'Desktop-Auslastung: UGOS-Sitzung ist abgelaufen') && IPS_GetInstance($id)['InstanceStatus'] === 102
+    && !str_contains($report, 'automatischer Versuch'),
     'Separater Fehler der Desktop-Abfrage blockiert die gültige Sitzung nicht');
 IPS_SetProperty($id, 'Username', 'monitor');
 IPS_ApplyChanges($id);
@@ -191,13 +196,21 @@ foreach ($snapshot['metrics'] as $ident => $metric) {
 }
 IPS_SetProperty($id, 'Variables', json_encode($selections));
 IPS_ApplyChanges($id);
-verify(count($selections) === 7 && count(IPS_GetChildrenIDs($id)) === 8 && $module->Update(), 'Alle neuen Messwerte lassen sich einzeln als Variablen anlegen und aktualisieren');
+$ramFreeId = IPS_GetObjectIDByIdent('RAMFree', $id);
+$ramCacheId = IPS_GetObjectIDByIdent('RAMCache', $id);
+$setValue = new ReflectionMethod($module, 'SetValue');
+$setValue->invoke($module, 'RAMFree', 999.0);
+$setValue->invoke($module, 'RAMCache', 888.0);
+verify(count($selections) === 7 && count(IPS_GetChildrenIDs($id)) === 8 && $module->Update(), 'Die Messwertvariablen und ihre Auswahl bleiben verfügbar');
+verify(GetValue($ramFreeId) === 999.0 && GetValue($ramCacheId) === 888.0, 'Fehlende RAM-Details überschreiben gespeicherte Werte nicht');
 foreach ($selections as ['Ident' => $ident]) {
     $variableId = IPS_GetObjectIDByIdent($ident, $id);
     $metric = $snapshot['metrics'][$ident];
     $expected = $metric['type'] === 2 ? (float) $metric['value'] : $metric['value'];
-    verify(GetValue($variableId) === $expected && IPS_GetVariable($variableId)['VariableType'] === $metric['type'],
-        'Symcon-Variable übernimmt Messwert und Typ für ' . $ident);
+    if ($metric['value'] !== null) {
+        verify(GetValue($variableId) === $expected && IPS_GetVariable($variableId)['VariableType'] === $metric['type'],
+            'Symcon-Variable übernimmt Messwert und Typ für ' . $ident);
+    }
     verify(IPS_GetVariablePresentation($variableId)['PRESENTATION'] === VARIABLE_PRESENTATION_VALUE_PRESENTATION,
         'Native Darstellung für ' . $ident);
 }
@@ -207,119 +220,69 @@ $ramIntervals = json_decode(IPS_GetVariablePresentation(IPS_GetObjectIDByIdent('
 verify($lanIntervals[0]['IntervalMinValue'] === 0 && $lanIntervals[0]['ConversionFactor'] === 1000
     && $lanIntervals[0]['SuffixValue'] === ' kB/s' && $ramIntervals[2]['ConversionFactor'] === 1000000000
     && $ramIntervals[2]['SuffixValue'] === ' GB', 'Native Darstellung skaliert LAN und RAM bei unveränderten Rohwerten');
+$setBuffer = new ReflectionMethod($module, 'SetBuffer');
+$payload = new ReflectionMethod($module, 'payload');
 IPS_SetProperty($id, 'Username', 'slow');
 IPS_SetProperty($id, 'Timeout', 2);
 IPS_ApplyChanges($id);
 $report = $module->TestConnection();
-$tileData = json_decode((new ReflectionMethod($module, 'payload'))->invoke($module), true);
-verify(str_contains($report, 'Ressourcenstatistik: Zeitlimit') && str_contains($report, 'Geräteinformationen: Zeitlimit')
-    && str_contains($report, 'cURL 28') && $tileData['fresh'], 'Reale HTTP-Timeouts werden als Teilabruf gemeldet');
-verify($tileData['data']['metrics']['CPU']['value'] === 17.4
-    && $tileData['data']['metrics']['Uptime']['value'] === null
-    && count($tileData['data']['disks']) === 2, 'Ressourcenübersicht und Laufwerksdaten bleiben bei zwei langsamen Teilabfragen verfügbar');
+$tileData = json_decode($payload->invoke($module), true);
+verify(str_contains($report, 'Geräteinformationen: Zeitlimit') && str_contains($report, 'cURL 28') && $tileData['fresh']
+    && $tileData['data']['metrics']['RAM']['value'] === 38.2 && $tileData['data']['metrics']['Fan_desktop_0']['value'] === 820
+    && count($tileData['data']['disks']) === 2,
+    'Desktop-Auslastung, Lüfter und Laufwerke bleiben beim Timeout der Geräteinformationen verfügbar');
 
-IPS_SetProperty($id, 'Username', 'machinefirst');
+IPS_SetProperty($id, 'Username', 'slowdesktop');
 IPS_ApplyChanges($id);
+clearstatcache(true, $readLog);
+$logOffset = filesize($readLog);
 $report = $module->TestConnection();
-$tileData = json_decode((new ReflectionMethod($module, 'payload'))->invoke($module), true);
-$metrics = array_column($tileData['data']['metrics'], 'value', 'id');
-verify(!str_contains($report, 'Teilabruf') && $metrics['CPU'] === 17.4 && $metrics['RAM'] === 38.2,
-    'Geräteinformationen werden vor der Ressourcenstatistik mit derselben Sitzung gelesen');
-verify($metrics['LANSend'] === 12500.5 && $metrics['LANReceive'] === 0
-    && GetValue($lanId) === 12500.5, 'LAN-Gesamtraten aus get_all aktualisieren Kachel und Variablen ohne separate LAN-Abfrage');
-
-IPS_SetProperty($id, 'Username', 'incomplete');
-IPS_ApplyChanges($id);
-$report = $module->TestConnection();
-$tileData = json_decode((new ReflectionMethod($module, 'payload'))->invoke($module), true);
-$metrics = array_column($tileData['data']['metrics'], 'value', 'id');
-verify(!str_contains($report, 'Teilabruf') && $metrics['CPU'] === 0 && $metrics['RAM'] === 38.2
-    && $metrics['CPUTemperature'] === 49 && $metrics['RAMFree'] === 8589934592,
-    'Ressourcenübersicht ergänzt fehlende Werte und erhält vorhandene Werte und Speicherdetails');
-verify($metrics['LANSend'] === 1200 && $metrics['LANReceive'] === 0,
-    'Separate LAN-Statistik ergänzt eine fehlende Gesamtrate');
-
-IPS_SetProperty($id, 'Username', 'tasktimeout');
-IPS_ApplyChanges($id);
-$report = $module->TestConnection();
-$tileData = json_decode((new ReflectionMethod($module, 'payload'))->invoke($module), true);
-verify(substr_count($report, 'cURL 28') === 3 && str_contains($report, 'Ohne aktuellen Messwert: CPU-Auslastung, RAM-Auslastung')
+$tileData = json_decode($payload->invoke($module), true);
+$recentReads = file_get_contents($readLog, false, null, $logOffset);
+verify(str_contains($report, 'Desktop-Auslastung: Zeitlimit') && str_contains($report, 'Desktop-Abfragen pausieren noch')
+    && !str_contains($recentReads, 'TemperatureMonitoring')
+    && $tileData['data']['metrics']['CPUTemperature']['value'] === 52 && $tileData['data']['metrics']['RAM']['value'] === null
     && count($tileData['data']['pools']) === 1 && count($tileData['data']['disks']) === 2,
-    'Drei Ressourcen-Timeouts lassen Speicher- und Laufwerksdaten verfügbar und benennen die fehlenden Messwerte');
-verify($tileData['data']['metrics']['LANSend']['value'] === null && GetValue($lanId) === 1200.0,
-    'Fehlende LAN-Daten überschreiben die gespeicherte Variable nicht mit null oder 0');
+    'Ein Timeout der Desktop-Auslastung verhindert die nächste Desktop-Anfrage und hält übrige Daten aktuell');
 
-IPS_SetProperty($id, 'Username', 'desktoponly');
+$setBuffer->invoke($module, 'LastAttempt', (string) (time() - 6));
+clearstatcache(true, $readLog);
+$logOffset = filesize($readLog);
+$report = $module->TestConnection();
+$recentReads = file_get_contents($readLog, false, null, $logOffset);
+verify(!str_contains($recentReads, 'desktop/components') && str_contains($recentReads, 'storage/disk/list')
+    && str_contains($report, 'Desktop-Abfragen pausieren noch'), 'Manueller Verbindungstest beachtet die Desktop-Pause');
+touch(getenv('UGNAS_TEST_TMP') . '/desktop-recovered');
+$setBuffer->invoke($module, 'DesktopRetryAt', (string) (time() - 1));
+$setBuffer->invoke($module, 'LastAttempt', (string) (time() - 6));
+verify($module->Update(), 'Automatischer Abruf versucht Desktop-Messungen nach der Pause erneut');
+$tileData = json_decode($payload->invoke($module), true);
+verify($tileData['data']['metrics']['RAM']['value'] === 38.2 && $tileData['data']['metrics']['Fan_desktop_1']['value'] === 840
+    && GetValue($lanId) === 12500.5, 'RAM-Auslastung, Lüfter und LAN werden nach Ende der Pause wieder aktualisiert');
+
+IPS_SetProperty($id, 'Username', 'slowthermal');
 IPS_ApplyChanges($id);
 $report = $module->TestConnection();
-$tileData = json_decode((new ReflectionMethod($module, 'payload'))->invoke($module), true);
-$metrics = array_column($tileData['data']['metrics'], 'value', 'id');
-verify(str_contains($report, 'Desktop-Monitoring liefert Ersatzwerte') && $metrics['CPU'] === 0
-    && $metrics['RAM'] === 35.11 && $metrics['CPUTemperature'] === 52 && $metrics['LANSend'] === 7436
-    && $metrics['LANReceive'] === 3480 && GetValue($lanId) === 7436.0,
-    'Desktop-Abfrage und Geräteinformationen liefern auch bei ausgefallener Detailstatistik aktuelle Werte');
-verify(!str_contains($report, 'LAN-Statistik') && str_contains($report, 'Ohne aktuellen Messwert: Freier RAM, RAM-Cache')
-    && $metrics['RAMFree'] === null && $metrics['RAMCache'] === null,
-    'Desktop-Raten ersparen eine separate LAN-Abfrage. RAM-Details bleiben ohne Quelle unbekannt');
-verify(str_contains($report, 'Separate RAM-Abfrage: NAS antwortet mit HTTP 404')
-    && IPS_GetInstance($id)['InstanceStatus'] === 102, 'Fehlende separate RAM-Abfrage unterbricht die übrigen Daten nicht');
-
-IPS_SetProperty($id, 'Username', 'ramdetails');
-IPS_ApplyChanges($id);
-$report = $module->TestConnection();
-$tileData = json_decode((new ReflectionMethod($module, 'payload'))->invoke($module), true);
-$metrics = array_column($tileData['data']['metrics'], 'value', 'id');
-verify(substr_count($report, 'cURL 28') === 2 && str_contains($report, 'Separate RAM-Abfrage liefert 2 Messwerte')
-    && !str_contains($report, 'Ohne aktuellen Messwert') && $metrics['CPU'] === 0
-    && $metrics['RAMFree'] === 0 && $metrics['RAMCache'] === 3221225472,
-    'Separate RAM-Abfrage liefert freie Bytes und Cache-Bytes trotz Zeitlimits der Sammelstatistik');
-verify(GetValue(IPS_GetObjectIDByIdent('RAMFree', $id)) === 0.0
-    && GetValue(IPS_GetObjectIDByIdent('RAMCache', $id)) === 3221225472.0,
-    'Die vorhandenen RAM-Variablen erhalten die gemeldeten Byte-Rohwerte');
-
-IPS_SetProperty($id, 'Username', 'rampartial');
-IPS_ApplyChanges($id);
-$report = $module->TestConnection();
-$tileData = json_decode((new ReflectionMethod($module, 'payload'))->invoke($module), true);
-$metrics = array_column($tileData['data']['metrics'], 'value', 'id');
-verify($metrics['RAMFree'] === 8589934592 && $metrics['RAMCache'] === 1610612736,
-    'Die separate RAM-Abfrage ergänzt einen fehlenden Cache-Wert und erhält den freien RAM aus der Sammelstatistik');
+$tileData = json_decode($payload->invoke($module), true);
+verify(str_contains($report, 'Desktop-Temperaturen und Lüfter: Zeitlimit')
+    && $tileData['data']['metrics']['RAM']['value'] === 38.2
+    && $tileData['data']['metrics']['CPUTemperature']['value'] === 52
+    && !isset($tileData['data']['metrics']['Fan_desktop_0']),
+    'Ein thermischer Timeout erhält die bereits verfügbaren Auslastungswerte und kennzeichnet fehlende Lüfterwerte');
 
 IPS_SetProperty($id, 'Username', 'allfail');
 IPS_ApplyChanges($id);
 $report = $module->TestConnection();
-verify(str_contains($report, 'Anmeldung: erfolgreich') && str_contains($report, 'Ressourcenübersicht: NAS antwortet mit HTTP 503')
+verify(str_contains($report, 'Anmeldung: erfolgreich') && str_contains($report, 'Geräteinformationen: NAS antwortet mit HTTP 503')
     && str_contains($report, 'Nächster automatischer Versuch in 10 s.')
-    && IPS_GetInstance($id)['InstanceStatus'] === 202, 'Ausfall sämtlicher Datenabrufe meldet einen klaren Fehler mit kurzem Wiederholintervall');
-$setBuffer = new ReflectionMethod($module, 'SetBuffer');
+    && IPS_GetInstance($id)['InstanceStatus'] === 202, 'Ausfall sämtlicher Basisabfragen meldet einen Fehler mit kurzem Wiederholintervall');
 $setBuffer->invoke($module, 'LastAttempt', (string) (time() - 6));
 $setBuffer->invoke($module, 'Failures', '6');
 $report = $module->TestConnection();
 verify(str_contains($report, 'Nächster automatischer Versuch in 60 s.'),
     'Manueller Test kann vor der automatischen Wiederholung erneut prüfen. Wartezeit bleibt auf 60 s begrenzt');
-
-$websocketUrl = parse_url(getenv('UGNAS_TEST_WS_URL'));
-IPS_SetProperty($id, 'Host', $websocketUrl['host']);
-IPS_SetProperty($id, 'Port', $websocketUrl['port']);
-IPS_SetProperty($id, 'Username', 'wslive');
-IPS_ApplyChanges($id);
-$report = $module->TestConnection();
-$tileData = json_decode((new ReflectionMethod($module, 'payload'))->invoke($module), true);
-$metrics = array_column($tileData['data']['metrics'], 'value', 'id');
-verify(str_contains($report, 'UGOS-Live-Verbindung geöffnet') && !str_contains($report, 'Teilabruf')
-    && $metrics['CPU'] === 17.4 && $metrics['RAMFree'] === 8589934592 && $metrics['RAMCache'] === 4294967296
-    && $metrics['LANSend'] === 12500.5 && $metrics['LANReceive'] === 0,
-    'Nach Ablauf der ersten Statistikabfrage liefert das authentifizierte Live-Abonnement wieder sämtliche Detailwerte');
-$loginCount = file_get_contents(getenv('UGNAS_TEST_TMP') . '/logins');
-$setBuffer->invoke($module, 'LastAttempt', (string) (time() - 6));
-$started = microtime(true);
-verify($module->Update() && microtime(true) - $started < 2
-    && file_get_contents(getenv('UGNAS_TEST_TMP') . '/logins') === $loginCount,
-    'Automatisches Polling mit erfolgreichem Live-Abruf öffnet die Verbindung vor der Statistik mit der bestehenden Sitzung');
-IPS_SetProperty($id, 'Username', 'wsbad');
-IPS_ApplyChanges($id);
-$report = $module->TestConnection();
-verify(str_contains($report, 'UGOS-Live-Verbindung nicht verfügbar') && str_contains($report, 'Desktop-Monitoring liefert Ersatzwerte')
-    && !is_file(getenv('UGNAS_TEST_TMP') . '/invalid-handshake-frame') && GetValue($lanId) === 7436.0,
-    'Ungültiger WebSocket-Handshake wird abgelehnt und Desktop-Messungen bleiben verfügbar');
+$allReads = file_get_contents($readLog);
+verify(!str_contains($allReads, '/taskmgr/') && !str_contains($allReads, '/desktop/ws')
+    && str_contains($allReads, 'DeviceMonitoring') && str_contains($allReads, 'TemperatureMonitoring'),
+    'Weder die automatische Aktualisierung noch der manuelle Verbindungstest rufen den Task-Manager oder WebSockets auf');
 echo "Bestanden: $checks SymconStub-Prüfungen\n";

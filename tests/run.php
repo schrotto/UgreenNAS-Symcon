@@ -25,23 +25,30 @@ function rejects(callable $fn, string $message, ?int $code = null): void
     throw new RuntimeException('FEHLER: Erwartete Ablehnung: ' . $message);
 }
 $f = telemetryFixtures();
-$s = UgosTelemetry::normalize($f['machine'], $f['stats'], $f['pools'], $f['disks'], $f['network']);
+$s = UgosTelemetry::normalize($f['machine'], $f['pools'], $f['disks'], $f['desktop'], $f['thermal']);
 check($s['metrics']['CPU']['value'] === 17.4, 'CPU korrekt');
 check($s['disks'][0]['temperature'] === 34.0 && $s['disks'][1]['temperature'] === 36.0, 'Disktemperatur über Identität statt Reihenfolge');
 $disks = $f['disks'];
 $disks['result'] = array_reverse($disks['result']);
-$s2 = UgosTelemetry::normalize($f['machine'], $f['stats'], $f['pools'], $disks);
+$s2 = UgosTelemetry::normalize($f['machine'], $f['pools'], $disks);
 check($s['disks'][0]['id'] === $s2['disks'][1]['id'], 'Laufwerk-Ident bleibt bei Sortierwechsel stabil');
+check($s['disks'][0]['temperature'] === $s2['disks'][1]['temperature'], 'Temperatur bleibt beim gleichen Laufwerk');
 $m = $s['metrics'];
-check($m['LANSend']['value'] === 12500.5 && $m['LANReceive']['value'] === 0.0, 'LAN-Raten stammen aus der Gesamtzeile und erhalten Richtung, Nachkommastellen und Nullwerte');
-check($m['RAMFree']['value'] === 8589934592.0 && $m['RAMCache']['value'] === 4294967296.0, 'Freier RAM und Cache werden als Byte-Werte übernommen');
+check($m['LANSend']['value'] === 12500.5 && $m['LANReceive']['value'] === 0.0, 'LAN-Raten erhalten Richtung, Nachkommastellen und Nullwerte');
+check($m['RAM']['value'] === 38.2 && $m['RAMFree']['value'] === null && $m['RAMCache']['value'] === null,
+    'Desktop-RAM-Auslastung liefert keine Schätzung für freie Bytes oder Cache');
+check($m['Fan_desktop_0']['value'] === 820 && $m['Fan_desktop_1']['value'] === 840
+    && !isset($m['Fan_cpu_fan_0']), 'Desktop-Lüfter werden ohne Annahme über ihren Typ erfasst');
+$fallbackFans = UgosTelemetry::normalize($f['machine'], null, null, [], ['fan_speed' => 0]);
+check($fallbackFans['metrics']['Fan_desktop_0']['value'] === 0 && $fallbackFans['metrics']['CPUTemperature']['value'] === 52.0,
+    'Einzelner Lüfter mit Nullwert und CPU-Temperatur aus Geräteinformationen werden unterstützt');
 $volumes = array_filter($m, static fn ($metric) => $metric['group'] === 'volume');
 check(count($volumes) === 1 && reset($volumes)['value'] === 28000000000000.0, 'Verfügbarer Volume-Speicher verwendet available');
 $reorderedPools = $f['pools'];
 $reorderedPools['result'][0]['volumes'][] = ['name' => 'second', 'total' => 1000, 'available' => 100];
 $reorderedPools['result'][0]['volumes'] = array_reverse($reorderedPools['result'][0]['volumes']);
 $reorderedPools['result'][0]['volumes'][1]['label'] = 'Neuer Anzeigename';
-$reordered = UgosTelemetry::normalize([], [], $reorderedPools, null)['metrics'];
+$reordered = UgosTelemetry::normalize([], $reorderedPools, null)['metrics'];
 check($reordered[array_key_first($volumes)]['value'] === 28000000000000.0, 'Volume-Ident bleibt bei Sortier- und Labelwechsel stabil');
 check($s2['metrics'][$s['disks'][0]['id'] . '_PowerOnHours']['value'] === 8760
     && $m[$s['disks'][1]['id'] . '_PowerOnHours']['value'] === 0, 'Betriebsstunden bleiben beim richtigen Laufwerk');
@@ -56,23 +63,25 @@ foreach ([null, [], [['total' => 100]], [['total' => 100, 'used' => 101]], [['to
 check(UgosTelemetry::volumeUsage([['total' => 100, 'used' => 0]])['percent'] === 0.0, 'Tatsächlich leeres Volume zeigt null Prozent');
 $noVolumes = $f['pools'];
 unset($noVolumes['result'][0]['volumes']);
-check(UgosTelemetry::normalize($f['machine'], $f['stats'], $noVolumes, $f['disks'])['pools'][0]['percent'] === null, 'Ohne Volume-Daten kein Rückfall auf Pool-Zuweisung');
+check(UgosTelemetry::normalize($f['machine'], $noVolumes, $f['disks'])['pools'][0]['percent'] === null, 'Ohne Volume-Daten kein Rückfall auf Pool-Zuweisung');
 check(!str_contains(json_encode($s), 'fixture-a'), 'Seriennummer wird nicht an Kachel übertragen');
 foreach ([-999, 101, 'oops', true, null] as $bad) {
     check(UgosTelemetry::number($bad, 0, 100) === null, 'Ungültiger Prozentwert bleibt nicht verfügbar');
 }
-$f['stats']['disk']['series'] = [['temperature' => 50]];
-$missing = UgosTelemetry::normalize($f['machine'], $f['stats'], null, $f['disks']);
-check($missing['disks'][0]['temperature'] === null, 'Keine Temperatur bei fehlender Gerätezuordnung');
-check(UgosTelemetry::normalize([], [], null, null)['metrics']['CPU']['value'] === null, 'Fehlende Daten werden nicht Nullmessungen');
+$f['disks']['result'][0]['is_standby'] = true;
+unset($f['disks']['result'][1]['temperature']);
+$missing = UgosTelemetry::normalize($f['machine'], null, $f['disks']);
+check($missing['disks'][0]['temperature'] === null && $missing['disks'][1]['temperature'] === null, 'Temperatur bleibt bei Standby oder fehlendem Wert unbekannt');
+check(UgosTelemetry::normalize([], null, null)['metrics']['CPU']['value'] === null, 'Fehlende Daten werden nicht Nullmessungen');
 $url = getenv('UGNAS_TEST_URL');
 $client = new UgosClient($url, 'monitor', 'test-secret');
 check($client->read('/ugreen/v1/sysinfo/machine/common')['common']['model'] === 'DXP8800 Plus', 'HTTP-Login mit tatsächlicher RSA-Entschlüsselung im Testserver');
 $session = $client->session();
 $reuse = new UgosClient($url, 'monitor', 'test-secret', 8, $session);
-check(isset($reuse->read('/ugreen/v1/taskmgr/stat/get_all')['overview']), 'Sitzung einschließlich Cookies wiederverwendbar');
+check(isset($reuse->read('/ugreen/v1/storage/pool/list')['result']), 'Sitzung einschließlich Cookies wiederverwendbar');
 $expired = new UgosClient($url, 'monitor', 'test-secret', 8, json_encode(['token' => 'expired-session', 'cookies' => ['token_uid' => '1000']]));
-check(isset($expired->read('/ugreen/v1/taskmgr/stat/get_all')['overview']), 'Abgelaufene Sitzung wird einmal erneuert');
+check(isset($expired->read('/ugreen/v1/storage/pool/list')['result']), 'Abgelaufene Sitzung wird einmal erneuert');
+rejects(fn () => $client->read('/ugreen/v1/taskmgr/stat/get_all'), 'Direkte Task-Manager-Abfrage abgelehnt');
 rejects(fn () => $client->read('/ugreen/v1/power/shutdown'), 'Schreib-/Power-Endpunkt abgelehnt');
 rejects(fn () => new UgosClient('http://user:pass@localhost', 'x', 'y'), 'URL mit Zugangsdaten abgelehnt');
 rejects(fn () => new UgosClient('http://localhost/evil', 'x', 'y'), 'URL mit Pfad abgelehnt');

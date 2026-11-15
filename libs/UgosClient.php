@@ -1,8 +1,6 @@
 <?php
 declare(strict_types=1);
 
-require_once __DIR__ . '/UgosResourceSubscription.php';
-
 final class UgosApiException extends RuntimeException {}
 
 /** Nur die hier fest hinterlegten Lese-Endpunkte dürfen aufgerufen werden. */
@@ -14,13 +12,8 @@ final class UgosClient
     private bool $httpResponded = false;
     private bool $authenticated = false;
     private bool $loginStarted = false;
-    private string $peerAddress = '';
-    private const DESKTOP_MONITORING = '/ugreen/v1/desktop/components/data?id=desktop.component.DeviceMonitoring';
     private const READ_PATHS = [
         '/ugreen/v1/sysinfo/machine/common',
-        '/ugreen/v1/taskmgr/stat/get_all',
-        '/ugreen/v1/taskmgr/stat/overview',
-        '/ugreen/v1/taskmgr/stat/net',
         '/ugreen/v1/storage/pool/list',
         '/ugreen/v2/storage/disk/list'
     ];
@@ -63,22 +56,13 @@ final class UgosClient
         return $this->token !== '';
     }
 
-    /** @return resource|null */
-    public function openResourceSubscription()
+    public function readDesktopMonitoring(string $component): array
     {
-        return UgosResourceSubscription::open($this->baseUrl, $this->peerAddress, $this->token,
-            $this->cookieHeader(), min($this->deadline, microtime(true) + 2));
-    }
-
-    public function readDesktopMonitoring(): array
-    {
-        // Eine abgelehnte optionale Desktop-Abfrage darf eine gültige Sitzung nicht zurücksetzen.
-        return $this->readOnce(self::DESKTOP_MONITORING, 4000);
-    }
-
-    public function readMemoryStatistics(): array
-    {
-        return $this->readOnce('/ugreen/v1/taskmgr/stat/memory', 2500);
+        if (!in_array($component, ['DeviceMonitoring', 'TemperatureMonitoring'], true)) {
+            throw new UgosApiException('Nicht freigegebener Endpunkt.');
+        }
+        // Die optionalen Desktop-Abfragen verwenden die bestehende Sitzung ohne erneute Anmeldung.
+        return $this->readOnce('/ugreen/v1/desktop/components/data?id=desktop.component.' . $component, 2500);
     }
 
     public function connectionSummary(): string
@@ -94,7 +78,7 @@ final class UgosClient
         return 'HTTP-Verbindung: Antwort erhalten. UGOS-Anmeldung: ' . $login . '.';
     }
 
-    public function read(string $path, ?int $timeoutMs = null): array
+    public function read(string $path): array
     {
         if (!in_array($path, self::READ_PATHS, true)) {
             throw new UgosApiException('Nicht freigegebener Endpunkt.');
@@ -103,7 +87,7 @@ final class UgosClient
             $this->login();
         }
         try {
-            return $this->readOnce($path, $timeoutMs);
+            return $this->readOnce($path);
         } catch (UgosApiException $e) {
             if (!in_array($e->getCode(), [401, 1024], true)) {
                 throw $e;
@@ -111,11 +95,11 @@ final class UgosClient
             $this->token = '';
             $this->cookies = [];
             $this->login();
-            return $this->readOnce($path, $timeoutMs); // höchstens ein erneuter Login
+            return $this->readOnce($path); // höchstens ein erneuter Login
         }
     }
 
-    private function readOnce(string $path, ?int $timeoutMs): array
+    private function readOnce(string $path, ?int $timeoutMs = null): array
     {
         $separator = str_contains($path, '?') ? '&' : '?';
         [$json] = $this->request('GET', $path . $separator . 'token=' . rawurlencode($this->token), timeoutMs: $timeoutMs);
@@ -246,9 +230,6 @@ final class UgosClient
         $ok = curl_exec($ch);
         $http = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
         $this->httpResponded = $this->httpResponded || $http > 0;
-        if ($http > 0) {
-            $this->peerAddress = (string) curl_getinfo($ch, CURLINFO_PRIMARY_IP);
-        }
         $errno = curl_errno($ch);
         curl_close($ch);
         if ($ok === false) {

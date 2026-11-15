@@ -1,4 +1,4 @@
-# Testbericht – 0.11, Build 11
+# Testbericht – 0.12, Build 12
 
 Stand 15.11.2026. Die folgenden Prüfungen wurden tatsächlich ausgeführt. Bei den Entwicklerprüfungen bestand **keine Verbindung zu einer echten NAS oder einem Symcon-Dienst**. Vom Benutzer wurden im ersten Gerätetest korrekte CPU-, RAM-, Lüfter- und Festplattentemperaturwerte gemeldet. Die beiden Korrekturen in Build 2 sind am Gerät noch zu bestätigen.
 
@@ -11,9 +11,9 @@ Stand 15.11.2026. Die folgenden Prüfungen wurden tatsächlich ausgeführt. Bei 
 | `module.json` | Gegen offizielles `moduleSchema.json` bestanden | Schema-Abruf vom 31.10.2026 |
 | `form.json` | JSON gültig. Geänderte Felder und Button anhand der Symcon-Dokumentation geprüft | Kein echter Instanzeditor-/Konsolentest |
 | `library.json` | Alle Felder außer Versions-Enum schema-konform | Öffentliches Schema führt weiterhin nur Versionen bis 6.2; Mindestversion 8.1 deshalb formal vom alten Enum abgelehnt. Die Bibliothek gibt ihre tatsächliche Mindestversion an; das Schema wurde nicht verändert. |
-| Daten-/Clienttests | 47 Prüfungen bestanden | Synthetische Fixtures und echter lokaler HTTP-Testserver |
-| SymconStubs | 86 Prüfungen bestanden | Unveränderte offizielle Stubs, kein echter Kernel |
-| Gerenderter Browser | 45 Prüfungen mit Build 8 bestanden | Gleiches Kachel-HTML in Build 11. Headless Chromium/Brave mit Playwright, kein Symcon-Webclient |
+| Daten-/Clienttests | 52 Prüfungen bestanden | Synthetische Fixtures und echter lokaler HTTP-Testserver |
+| SymconStubs | 75 Prüfungen bestanden | Unveränderte offizielle Stubs, kein echter Kernel |
+| Gerenderter Browser | 45 Prüfungen mit Build 8 bestanden | Gleiches Kachel-HTML in Build 12. Headless Chromium/Brave mit Playwright, kein Symcon-Webclient |
 | Sichtkontrolle | Dunkel-, Hell- und Smartphone-Vorschau geöffnet und geprüft | Testdaten, keine Live-Messwerte |
 | ZIP | CRC und Bytegleichheit mit allen enthaltenen Workspace-Dateien geprüft | Installationsabnahme am Zielsystem noch erforderlich |
 
@@ -106,3 +106,9 @@ Die Modul-HTML ist seit dem bestandenen Browserlauf von Build 2 unverändert; di
 Beim Gerätetest mit Build 10 meldete das Modul 30 Messwerte, drei Speicherpools und sieben Laufwerke. Die UGOS-Live-Verbindung war offen, und die Desktop-Abfrage lieferte Werte. Ressourcenstatistik und Ressourcenübersicht meldeten Zeitlimits. Die Diagnose führte freien RAM und RAM-Cache als fehlend auf.
 
 47 Daten- und HTTP-Prüfungen sowie 86 Prüfungen mit SymconStubs sind bestanden. Der lokale Server simuliert Zeitlimits der Sammelstatistik mit gültiger separater RAM-Abfrage, einen einzelnen fehlenden Cache-Wert und die Antwort HTTP 404. Geprüft sind die Übernahme von Byte-Rohwerten einschließlich null freier Bytes, der Vorrang bereits vorhandener Messwerte und die unveränderte Verfügbarkeit der anderen Werte bei HTTP 404. Die Verfügbarkeit des separaten Endpunkts auf der betroffenen Firmware muss am Gerät geprüft werden.
+
+## Prüfungen für Build 12
+
+Am DXP8800 Plus wurden fehlende RAM- und Lüfterwerte sowie ein stillstehender UGOS-Task-Manager gemeldet. Die Symptome traten nach Benutzerangaben bereits vor Build 11 auf. Die auslösende Version und die interne Ursache sind offen.
+
+52 Daten- und HTTP-Prüfungen sowie 75 Prüfungen mit SymconStubs sind bestanden. Der lokale Testserver zeichnet die angefragten Pfade auf. Der Timerabruf und der manuelle Verbindungstest haben weder direkte Task-Manager-Endpunkte noch das WebSocket-Abonnement angefragt. Weitere Prüfungen decken die Deaktivierung, echte Zeitlimits beider Desktop-Komponenten, die Pause mit weiterhin verfügbaren Speicherinformationen, das Ende der Pause, die Zuordnung von Laufwerkstemperaturen und den Erhalt gespeicherter RAM-Variablenwerte ab. Die Stabilität des UGOS-Task-Managers nach dem Update ist am Gerät zu bestätigen.

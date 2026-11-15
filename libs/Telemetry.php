@@ -52,56 +52,31 @@ final class UgosTelemetry
         return ['total' => $total, 'used' => $used, 'percent' => 100 * $used / $total];
     }
 
-    public static function lanRates(mixed $network): array
+    public static function normalize(array $machine, ?array $pools, ?array $disks, array $desktop = [], array $thermal = []): array
     {
-        $summary = $network['series'][0] ?? null;
-        return [self::number($summary['send_rate'] ?? null), self::number($summary['recv_rate'] ?? null)];
-    }
-
-    public static function desktopLanRates(array $desktop): array
-    {
-        return [self::number($desktop['upload_speed']['raw'] ?? null), self::number($desktop['download_speed']['raw'] ?? null)];
-    }
-
-    public static function resourceUsage(array $stats): array
-    {
-        $overview = $stats['overview'] ?? $stats;
-        return [
-            self::number($overview['cpu'][0]['used_percent'] ?? null, 0, 100),
-            self::number($overview['mem'][0]['used_percent'] ?? null, 0, 100)
-        ];
-    }
-
-    public static function normalize(array $machine, array $stats, ?array $pools, ?array $disks, ?array $network = null,
-        array $desktop = []): array
-    {
-        $overview = $stats['overview'] ?? $stats;
         $common = $machine['common'] ?? [];
         $metrics = [];
         $add = static function (string $id, string $name, int $type, string $unit, mixed $value, string $group = 'system') use (&$metrics): void {
             $metrics[$id] = compact('id', 'name', 'type', 'unit', 'value', 'group');
         };
         $add('Online', 'Verbindung', 0, '', true);
-        [$cpu, $ram] = self::resourceUsage($stats);
-        $add('CPU', 'CPU-Auslastung', 2, '%', $cpu ?? self::number($desktop['cpu_usage_rate'] ?? null, 0, 100));
-        $add('RAM', 'RAM-Auslastung', 2, '%', $ram ?? self::number($desktop['ram_usage_rate'] ?? null, 0, 100));
-        $add('CPUTemperature', 'CPU-Temperatur', 2, '°C', self::number($overview['cpu'][0]['temp'] ?? null, -20, 130)
+        $add('CPU', 'CPU-Auslastung', 2, '%', self::number($desktop['cpu_usage_rate'] ?? null, 0, 100));
+        $add('RAM', 'RAM-Auslastung', 2, '%', self::number($desktop['ram_usage_rate'] ?? null, 0, 100));
+        $add('CPUTemperature', 'CPU-Temperatur', 2, '°C', self::number($thermal['cpu_temperature'] ?? null, 1, 130)
             ?? self::number($machine['hardware']['cpu'][0]['temperature'] ?? null, 1, 130));
         $uptime = self::number($common['run_time'] ?? null, 0, 315576000);
         $add('Uptime', 'Betriebszeit', 1, 's', $uptime === null ? null : (int) $uptime);
-        [$send, $receive] = self::lanRates($stats['net'] ?? null);
-        [$fallbackSend, $fallbackReceive] = self::lanRates($network);
-        [$desktopSend, $desktopReceive] = self::desktopLanRates($desktop);
-        $add('LANSend', 'LAN senden (gesamt)', 2, 'B/s', $send ?? $fallbackSend ?? $desktopSend);
-        $add('LANReceive', 'LAN empfangen (gesamt)', 2, 'B/s', $receive ?? $fallbackReceive ?? $desktopReceive);
-        $add('RAMFree', 'Freier RAM', 2, 'B', self::number($stats['mem']['structure']['free'] ?? null));
-        $add('RAMCache', 'RAM-Cache', 2, 'B', self::number($stats['mem']['structure']['cache'] ?? null));
-        foreach (['cpu_fan' => 'CPU-Lüfter', 'device_fan' => 'Gehäuselüfter'] as $kind => $label) {
-            foreach (array_slice(is_array($overview[$kind] ?? null) ? $overview[$kind] : [], 0, 16) as $i => $fan) {
-                $id = 'Fan_' . $kind . '_' . $i;
-                $value = self::number($fan['speed'] ?? null, 0, 40000);
-                $add($id, $label . ' ' . ($i + 1), 1, 'rpm', $value === null ? null : (int) $value, 'fan');
-            }
+        $add('LANSend', 'LAN senden (gesamt)', 2, 'B/s', self::number($desktop['upload_speed']['raw'] ?? null));
+        $add('LANReceive', 'LAN empfangen (gesamt)', 2, 'B/s', self::number($desktop['download_speed']['raw'] ?? null));
+        $add('RAMFree', 'Freier RAM', 2, 'B', null);
+        $add('RAMCache', 'RAM-Cache', 2, 'B', null);
+        $fans = array_slice(is_array($thermal['fan_list'] ?? null) ? $thermal['fan_list'] : [], 0, 16);
+        if ($fans === [] && self::number($thermal['fan_speed'] ?? null, 0, 40000) !== null) {
+            $fans = [['speed' => $thermal['fan_speed']]];
+        }
+        foreach ($fans as $i => $fan) {
+            $speed = self::number($fan['speed'] ?? null, 0, 40000);
+            $add('Fan_desktop_' . $i, 'Lüfter ' . ($i + 1), 1, 'rpm', $speed === null ? null : (int) $speed, 'fan');
         }
         $poolCards = [];
         $volumeCount = 0;
@@ -144,14 +119,6 @@ final class UgosTelemetry
             }
         }
         $diskCards = [];
-        // Temperaturzuordnung nur über Geräteidentität, niemals über Reihenfolge.
-        $temperatures = [];
-        foreach (($stats['disk']['series'] ?? []) as $entry) {
-            $device = self::text($entry['dev_name'] ?? $entry['name'] ?? '');
-            if ($device !== '' && $device !== 'overview') {
-                $temperatures[basename($device)] = self::number($entry['temperature'] ?? null, -20, 130);
-            }
-        }
         foreach (array_slice($disks['result'] ?? [], 0, 32) as $disk) {
             if (!is_array($disk)) {
                 continue;
@@ -163,7 +130,7 @@ final class UgosTelemetry
             }
             $id = 'Disk_' . substr(hash('sha256', $identity), 0, 16);
             $name = self::text($disk['label'] ?? '') ?: ($device ?: 'Laufwerk');
-            $temperature = $temperatures[basename($device)] ?? null;
+            $temperature = ($disk['is_standby'] ?? false) === true ? null : self::number($disk['temperature'] ?? null, 1, 130);
             $status = self::text($disk['status'] ?? null);
             $add($id . '_Temperature', $name . ' – Temperatur', 2, '°C', $temperature, 'disk');
             $add($id . '_Status', $name . ' – UGOS-Status', 3, '', $status === '' ? null : $status, 'disk');

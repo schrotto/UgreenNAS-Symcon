@@ -1,6 +1,6 @@
 # UGREEN NAS Monitoring für IP-Symcon
 
-Version **0.11, Build 11 – Testversion**, Stand 15.11.2026.
+Version **0.12, Build 12 – Testversion**, Stand 15.11.2026.
 
 Lokales Monitoring für UGREEN-NAS-Geräte mit UGOS Pro über deren Webschnittstelle. Es sind keine SSH-Verbindung, kein Docker-Container und kein Agent auf der NAS erforderlich. Die Bibliothek ist für IP-Symcon **ab 8.1** vorbereitet und verwendet `IPSModuleStrict` und das native HTML-SDK. Die tatsächlich eingesetzte Symcon-Version wurde noch nicht mitgeteilt.
 
@@ -9,10 +9,10 @@ Referenzanforderung ist ein **DXP8800 Plus mit UGOS Pro 1.20.0.0142**. Weitere D
 ## Funktionen
 
 - Verbindung, CPU- und RAM-Auslastung, CPU-Temperatur und Betriebszeit.
-- LAN-Sende- und Empfangsrate, freier RAM, RAM-Cache, verfügbarer Speicher je Volume und Betriebsstunden je Laufwerk.
-- Dynamische Erkennung von CPU-/Gehäuselüftern und deren Drehzahlen.
+- LAN-Sende- und Empfangsrate, verfügbarer Speicher je Volume und Betriebsstunden je Laufwerk.
+- Dynamische Erkennung der vom UGOS-Desktop gemeldeten Lüfterdrehzahlen.
 - Speicherpools mit tatsächlicher, nach Volume-Kapazität gewichteter Volume-Belegung, RAID-Bezeichnung und unverändertem UGOS-Status.
-- Laufwerke mit Modell, Größe und unverändertem UGOS-Status; Temperaturen nur bei sicherer Zuordnung über den Gerätenamen.
+- Laufwerke mit Modell, Größe und unverändertem UGOS-Status. Die Temperatur stammt aus dem jeweiligen Eintrag der Laufwerksliste.
 - Lokale Warnhinweise bei hoher CPU-Auslastung, CPU-Temperatur oder Poolbelegung.
 - Responsive Dashboard-Kachel in hellem, dunklem oder automatischem Farbschema, mit wählbarer Akzentfarbe und ein-/ausblendbaren Bereichen.
 - Manuelle Aktualisierung aus der Kachel, Live-Aktualisierung, markierte alte Daten und Verbindungsdiagnose.
@@ -41,6 +41,12 @@ Für die Installation über **Module Control → Hinzufügen** die Repository-Ad
 5. Instanz als Kachel in die Symcon-Kachelvisualisierung aufnehmen. Keine HTML-Box anlegen. Nach einem Modulupdate die geöffnete Visualisierung neu laden, damit Änderungen am HTML/CSS/JavaScript wirksam werden.
 
 Anmeldung mit RSA-Passwortverschlüsselung, Sitzungstoken und Cookies erfolgt automatisch. Die notwendige Freigabe eines neuen Clients bei **Zwei-Faktor-Anmeldung wird noch nicht unterstützt**. Ein solches Konto liefert eine Diagnose; die Zwei-Faktor-Prüfung wird nicht umgangen. Für produktive Nutzung mit diesem Konto muss der Freigabeablauf zunächst ergänzt werden.
+
+## Änderungen in Build 12
+
+Die direkten Task-Manager-Abfragen einschließlich der separaten RAM-Abfrage und des Live-Abonnements wurden nach dem gemeldeten Stillstand des UGOS-Task-Managers entfernt. CPU- und RAM-Auslastung sowie LAN-Raten kommen aus der Geräteüberwachung des UGOS-Desktops. CPU-Temperatur und Lüfter kommen aus dessen Temperaturübersicht, sofern UGOS sie meldet. Meldet eine Desktop-Abfrage ein Zeitlimit oder einen vorübergehenden Dienstfehler, pausieren beide Desktop-Abfragen fünf Minuten. Geräteinformationen, Speicherpools und Laufwerke werden weiter abgefragt. [Beispielantworten der UGOS-Desktop-Abfragen](https://github.com/Tom-Bom-badil/home-assistant_ugreen-nas/discussions/43)
+
+Die RAM-Auslastung bleibt verfügbar, wenn die Geräteüberwachung antwortet. Für freien RAM und RAM-Cache gibt es in diesem Abruf keine Datenquelle. Die bisherigen Variablen bleiben erhalten. Da der Desktop die Lüftertypen nicht angibt, erscheinen seine Werte als **Lüfter 1**, **Lüfter 2** usw. Für deren Statusvariablen die neuen Einträge in der Variablenverwaltung auswählen.
 
 ## Änderungen in Build 11
 
@@ -145,7 +151,7 @@ Die Kachel zeigt Daten nach Ablauf von `max(45 Sekunden, 2 × Intervall)` als ve
 
 ## Kommunikation und Fehlerbehandlung
 
-Pro Poll werden Systeminformationen, Statistiken, Speicherpools und Laufwerke gelesen. Bei fehlenden CPU- oder RAM-Grundwerten ergänzt `taskmgr/stat/overview` die ausführliche Ressourcenstatistik. Fehler einzelner Endpunkte ergeben eine Teildiagnose. Nur gültige Messwerte werden übernommen.
+Pro Poll werden Geräteinformationen, Speicherpools und Laufwerke gelesen. Die UGOS-Desktop-Komponenten für Geräteüberwachung und Temperatur liefern zusätzliche Messwerte. Nach einem Timeout oder HTTP 503/504 an einer Desktop-Komponente gilt eine gemeinsame fünfminütige Pause für beide Komponenten. Fehler einzelner Endpunkte ergeben eine Teildiagnose.
 
 Mindestintervall 15 Sekunden, Standard 60 Sekunden. Anfragen haben ein konfigurierbares Zeitlimit von 2–30 Sekunden; ein kompletter Durchlauf ist zusätzlich auf höchstens 55 Sekunden begrenzt. Zeitgleiche Polls werden per Symcon-Semaphore verhindert; manuelle Wiederholungen innerhalb von 5 Sekunden werden begrenzt. Ein abgelaufenes Token wird je Leseanfrage höchstens einmal erneuert.
 
@@ -174,7 +180,6 @@ UgreenNAS/
   module.html
 libs/
   UgosClient.php
-  UgosResourceSubscription.php
   Telemetry.php
 docs/
   TESTBERICHT.md
@@ -189,7 +194,6 @@ tests/
   run.php
   symcon.php
   run_local.py
-  websocket_fixture.py
   make_preview.php
   preview-payload.json
   browser.cjs

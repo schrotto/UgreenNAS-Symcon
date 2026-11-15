@@ -37,45 +37,14 @@ if (str_starts_with($token, 'invalidjson')) {
     echo '<html>keine API</html>';
     exit;
 }
-if ($path === '/ugreen/v1/taskmgr/stat/memory') {
-    if (str_starts_with($token, 'ramdetails-')) {
-        $response(['structure' => ['free' => '0', 'cache' => 3221225472]]);
-    }
-    if (str_starts_with($token, 'rampartial-')) {
-        $response(['mem' => ['structure' => ['free' => 1, 'cache' => 1610612736]]]);
-    }
-    http_response_code(404);
+$component = $path === '/ugreen/v1/desktop/components/data' ? ($_GET['id'] ?? '') : '';
+file_put_contents($directory . '/reads', $path . ($component === '' ? '' : '?' . $component) . "\n", FILE_APPEND);
+if (str_starts_with($path, '/ugreen/v1/taskmgr/') || $path === '/ugreen/v1/desktop/ws') {
+    http_response_code(410);
     $response([]);
 }
-if (str_starts_with($token, 'slow-') && in_array($path, ['/ugreen/v1/taskmgr/stat/get_all', '/ugreen/v1/sysinfo/machine/common'], true)) {
+if (str_starts_with($token, 'slow-') && $path === '/ugreen/v1/sysinfo/machine/common') {
     usleep(2200000);
-}
-if (str_starts_with($token, 'tasktimeout-') && str_starts_with($path, '/ugreen/v1/taskmgr/stat/')) {
-    usleep(2200000);
-}
-$desktopMonitoring = str_starts_with($token, 'desktoponly-') || str_starts_with($token, 'wsbad-')
-    || str_starts_with($token, 'ramdetails-');
-if ($desktopMonitoring && str_starts_with($path, '/ugreen/v1/taskmgr/stat/')) {
-    usleep(2200000);
-}
-if (preg_match('/^wslive-\d+$/D', $token) && str_starts_with($path, '/ugreen/v1/taskmgr/stat/')) {
-    $marker = $directory . '/' . $token;
-    if (!is_file($marker)) {
-        usleep(2200000);
-    }
-}
-if (preg_match('/^machinefirst-\d+$/D', $token)) {
-    $first = $directory . '/' . $token;
-    if (!is_file($first)) {
-        file_put_contents($first, $path);
-    }
-    if (str_starts_with($path, '/ugreen/v1/taskmgr/') && file_get_contents($first) !== '/ugreen/v1/sysinfo/machine/common') {
-        usleep(2200000);
-    }
-    if ($path === '/ugreen/v1/taskmgr/stat/net') {
-        http_response_code(503);
-        $response([]);
-    }
 }
 if (str_starts_with($token, 'allfail-')) {
     http_response_code(503);
@@ -88,42 +57,26 @@ if (str_starts_with($token, 'oversize')) {
 if (str_starts_with($token, 'partial-') && $path === '/ugreen/v2/storage/disk/list') {
     $response([], 1008);
 }
-if (str_starts_with($token, 'partial-') && $path === '/ugreen/v1/taskmgr/stat/net') {
-    http_response_code(404);
-    $response([]);
-}
-if ($path === '/ugreen/v1/desktop/components/data' && ($_GET['id'] ?? '') === 'desktop.component.DeviceMonitoring') {
+$f = telemetryFixtures();
+if ($component === 'desktop.component.DeviceMonitoring') {
     if (str_starts_with($token, 'partial-')) {
         $response([], 1024);
     }
-    if ($desktopMonitoring) {
-        $response(['cpu_usage_rate' => 0, 'ram_usage_rate' => '35.11', 'upload_speed' => ['raw' => 7436],
-            'download_speed' => ['raw' => '3480', 'unit' => 'KB/s', 'value' => 3.4]]);
+    if (str_starts_with($token, 'slowdesktop-') && !is_file($directory . '/desktop-recovered')) {
+        usleep(2200000);
     }
+    $response($f['desktop']);
 }
-$f = telemetryFixtures();
-if ($desktopMonitoring) {
-    $f['machine']['hardware']['cpu'][0]['temperature'] = 52;
+if ($component === 'desktop.component.TemperatureMonitoring') {
+    if (str_starts_with($token, 'slowthermal-')) {
+        usleep(2200000);
+    }
+    $response($f['thermal']);
 }
-if (str_starts_with($token, 'machinefirst-')) {
-    $f['stats']['net'] = $f['network'];
-}
-if (str_starts_with($token, 'incomplete-') && $path === '/ugreen/v1/taskmgr/stat/get_all') {
-    $f['stats']['overview']['cpu'][0] = ['used_percent' => 0];
-    unset($f['stats']['overview']['mem']);
-    $f['stats']['net']['series'][0] = ['send_rate' => 1200];
-}
-if (str_starts_with($token, 'rampartial-')) {
-    unset($f['stats']['mem']['structure']['cache']);
-}
-$map = ['/ugreen/v1/sysinfo/machine/common' => 'machine', '/ugreen/v1/taskmgr/stat/get_all' => 'stats',
-    '/ugreen/v1/taskmgr/stat/overview' => 'stats', '/ugreen/v1/storage/pool/list' => 'pools', '/ugreen/v2/storage/disk/list' => 'disks',
-    '/ugreen/v1/taskmgr/stat/net' => 'network'];
+$map = ['/ugreen/v1/sysinfo/machine/common' => 'machine', '/ugreen/v1/storage/pool/list' => 'pools',
+    '/ugreen/v2/storage/disk/list' => 'disks'];
 if (!isset($map[$path])) {
     http_response_code(404);
     $response([]);
-}
-if ($path === '/ugreen/v1/taskmgr/stat/overview') {
-    $response($f['stats']['overview']);
 }
 $response($f[$map[$path]]);

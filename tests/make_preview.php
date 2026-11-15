@@ -2,7 +2,10 @@
 require __DIR__ . '/fixtures.php';
 require __DIR__ . '/../libs/Telemetry.php';
 $f = telemetryFixtures();
-$s = UgosTelemetry::normalize($f['machine'], $f['stats'], $f['pools'], $f['disks'], $f['network']);
+$s = UgosTelemetry::normalize($f['machine'], $f['pools'], $f['disks'], $f['desktop'], $f['thermal']);
+// Synthetische RAM-Details für die Vorschau der Darstellung älterer Messwerte.
+$s['metrics']['RAMFree']['value'] = 8589934592;
+$s['metrics']['RAMCache']['value'] = 4294967296;
 $s['timestamp'] = 1793458800;
 $s['warnings'] = [];
 $p = ['enabled' => true, 'fresh' => true, 'data' => $s, 'alerts' => [], 'diagnostic' => 'Designvorschau mit synthetischen Testdaten. Keine Verbindung zu einer NAS.', 'now' => $s['timestamp'], 'staleAfter' => 120, 'nextAllowed' => 0,

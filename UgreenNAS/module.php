@@ -119,7 +119,7 @@ class UgreenNAS extends IPSModuleStrict
                 $this->WriteAttributeString('Snapshot', '{}');
                 $this->WriteAttributeString('Catalog', '{}');
                 $this->WriteAttributeString('Source', $source);
-                $this->SetBuffer('LiveStatistics', '');
+                $this->SetBuffer('DesktopRetryAt', '');
             }
             $this->configureVariables();
             $this->validateConfiguration();
@@ -192,7 +192,6 @@ class UgreenNAS extends IPSModuleStrict
             return [false, 'Eine NAS-Abfrage läuft bereits.'];
         }
         $client = null;
-        $subscription = null;
         try {
             // Ein manueller Test kann nach einem Transportfehler früher erneut prüfen.
             $waitUntil = (int) $this->GetBuffer('LastAttempt') + 5;
@@ -209,55 +208,31 @@ class UgreenNAS extends IPSModuleStrict
             $warnings = [];
             $machine = $this->readSection($client, '/ugreen/v1/sysinfo/machine/common', 'Geräteinformationen', $warnings,
                 static fn (array $data): bool => is_array($data['common'] ?? null));
-            $liveAttempted = $this->GetBuffer('LiveStatistics') === '1';
-            if ($liveAttempted) {
-                $subscription = $client->openResourceSubscription();
-            }
-            $statsWarnings = [];
-            $stats = $this->readResourceStatistics($client, $statsWarnings, $statsTimedOut);
-            $retryWithLive = $statsTimedOut && !$liveAttempted;
-            if ($retryWithLive) {
-                $liveAttempted = true;
-                $subscription = $client->openResourceSubscription();
-            }
             $validList = static fn (array $data): bool => is_array($data['result'] ?? null);
             $pools = $this->readSection($client, '/ugreen/v1/storage/pool/list', 'Speicherpools', $warnings, $validList);
             $disks = $this->readSection($client, '/ugreen/v2/storage/disk/list', 'Laufwerke', $warnings, $validList);
-            if ($retryWithLive && $subscription !== null) {
-                $statsWarnings = [];
-                $stats = $this->readResourceStatistics($client, $statsWarnings, $statsTimedOut, 5000);
+            if (!$this->ReadPropertyBoolean('Enabled')) {
+                return [false, 'Überwachung deaktiviert.'];
             }
-            $this->SetBuffer('LiveStatistics', $subscription !== null && $stats !== null ? '1' : '');
-            $warnings = array_merge($warnings, $statsWarnings);
-            $desktop = $statsTimedOut ? $this->readDesktopStatistics($client, $warnings) : null;
-            $memory = [];
-            if ($machine !== null || $stats !== null || $pools !== null || $disks !== null || $desktop !== null) {
-                $memory = $this->readMissingMemoryStatistics($client, $stats['mem']['structure'] ?? null, $warnings);
-            }
-            $stats = $this->completeResourceOverview($client, $stats, $warnings);
-            $network = null;
-            [$send, $receive] = UgosTelemetry::lanRates($stats['net'] ?? null);
-            [$desktopSend, $desktopReceive] = UgosTelemetry::desktopLanRates($desktop ?? []);
-            if (($send ?? $desktopSend) === null || ($receive ?? $desktopReceive) === null) {
-                $network = $this->readSection($client, '/ugreen/v1/taskmgr/stat/net', 'LAN-Statistik', $warnings,
-                    static fn (array $data): bool => UgosTelemetry::lanRates($data) !== [null, null]);
-            }
-            if (!$statsTimedOut && ($machine !== null || $stats !== null || $network !== null)) {
-                [$cpu, $ram] = UgosTelemetry::resourceUsage($stats ?? []);
-                [$fallbackSend, $fallbackReceive] = UgosTelemetry::lanRates($network);
-                if (in_array(null, [$cpu, $ram, $send ?? $fallbackSend, $receive ?? $fallbackReceive], true)) {
-                    $desktop = $this->readDesktopStatistics($client, $warnings);
-                }
-            }
-            if ($machine === null && $stats === null && $pools === null && $disks === null && $network === null && $desktop === null) {
+            if ($machine === null && $pools === null && $disks === null) {
                 throw new UgosApiException(implode(' ', $warnings));
             }
-            if ($memory !== []) {
-                $details = is_array($stats['mem']['structure'] ?? null) ? $stats['mem']['structure'] : [];
-                $stats['mem'] = is_array($stats['mem'] ?? null) ? $stats['mem'] : [];
-                $stats['mem']['structure'] = array_replace($details, $memory);
+            $desktop = [];
+            $thermal = [];
+            if ((int) $this->GetBuffer('DesktopRetryAt') <= time()) {
+                $desktop = $this->readDesktopSection($client, 'DeviceMonitoring', 'Desktop-Auslastung', $warnings);
+                if ((int) $this->GetBuffer('DesktopRetryAt') <= time()) {
+                    $thermal = $this->readDesktopSection($client, 'TemperatureMonitoring', 'Desktop-Temperaturen und Lüfter', $warnings);
+                }
             }
-            $snapshot = UgosTelemetry::normalize($machine ?? [], $stats ?? [], $pools, $disks, $network, $desktop ?? []);
+            if (!$this->ReadPropertyBoolean('Enabled')) {
+                return [false, 'Überwachung deaktiviert.'];
+            }
+            $desktopPause = (int) $this->GetBuffer('DesktopRetryAt') - time();
+            if ($desktopPause > 0) {
+                $warnings[] = 'Desktop-Abfragen pausieren noch ' . $desktopPause . ' s.';
+            }
+            $snapshot = UgosTelemetry::normalize($machine ?? [], $pools, $disks, $desktop, $thermal);
             $unavailable = [];
             foreach (['CPU', 'RAM', 'CPUTemperature', 'RAMFree', 'RAMCache', 'LANSend', 'LANReceive'] as $ident) {
                 $metric = $snapshot['metrics'][$ident];
@@ -302,21 +277,15 @@ class UgreenNAS extends IPSModuleStrict
             $count = count(array_filter($snapshot['metrics'], static fn ($metric) => $metric['value'] !== null));
             $report = $client->connectionSummary() . ' Datenabruf: ' . $count . ' Messwerte, ';
             $report .= count($snapshot['pools']) . ' Speicherpools und ' . count($snapshot['disks']) . ' Laufwerke erkannt.';
-            if ($liveAttempted) {
-                $report .= $subscription !== null ? ' UGOS-Live-Verbindung geöffnet.' : ' UGOS-Live-Verbindung nicht verfügbar.';
-            }
-            if ($desktop !== null) {
-                $report .= ' Desktop-Monitoring liefert Ersatzwerte.';
-            }
-            if ($memory !== []) {
-                $report .= ' Separate RAM-Abfrage liefert ' . (count($memory) === 1 ? '1 Messwert.' : '2 Messwerte.');
-            }
             if ($warnings !== []) {
                 $report .= ' Teilabruf: ' . implode(' ', $warnings);
             }
             $this->WriteAttributeString('Diagnostic', $report);
             return [true, $report];
         } catch (Throwable $e) {
+            if (!$this->ReadPropertyBoolean('Enabled')) {
+                return [false, 'Überwachung deaktiviert.'];
+            }
             $authFailed = $e instanceof UgosApiException && in_array($e->getCode(), [1003, 401, 1024], true);
             $this->SetBuffer('Session', !$authFailed && $client?->hasSession() ? $client->session() : '');
             $this->SetBuffer('AuthBlocked', $authFailed ? '1' : '');
@@ -334,101 +303,37 @@ class UgreenNAS extends IPSModuleStrict
             $this->markOffline();
             return [false, $report];
         } finally {
-            if ($subscription !== null) {
-                fclose($subscription);
-            }
             $retryAt = (int) $this->GetBuffer('NextAllowed');
             $seconds = $retryAt > 0 ? max(1, $retryAt - time()) : max(15, $this->ReadPropertyInteger('Interval'));
-            $this->SetTimerInterval('Poll', $seconds * 1000);
+            $this->SetTimerInterval('Poll', $this->ReadPropertyBoolean('Enabled') ? $seconds * 1000 : 0);
             IPS_SemaphoreLeave('UGNAS_' . $this->InstanceID);
             $this->publish();
         }
     }
 
-    private function readResourceStatistics(UgosClient $client, array &$warnings, ?bool &$timedOut, ?int $timeoutMs = null): ?array
+    private function readDesktopSection(UgosClient $client, string $component, string $label, array &$warnings): array
     {
-        return $this->readSection($client, '/ugreen/v1/taskmgr/stat/get_all', 'Ressourcenstatistik', $warnings,
-            static fn (array $data): bool => is_array($data['overview'] ?? null) || is_array($data['cpu'] ?? null)
-                || is_array($data['mem'] ?? null) || is_array($data['disk']['series'] ?? null)
-                || is_array($data['net']['series'] ?? null), $timedOut, $timeoutMs);
+        if (!$this->ReadPropertyBoolean('Enabled')) {
+            return [];
+        }
+        try {
+            return $client->readDesktopMonitoring($component);
+        } catch (UgosApiException $e) {
+            if (in_array($e->getCode(), [CURLE_OPERATION_TIMEDOUT, 503, 504], true)) {
+                $this->SetBuffer('DesktopRetryAt', (string) (time() + 300));
+            }
+            $warnings[] = $label . ': ' . $e->getMessage();
+            return [];
+        }
     }
 
-    private function readDesktopStatistics(UgosClient $client, array &$warnings): ?array
+    private function readSection(UgosClient $client, string $path, string $label, array &$warnings, callable $valid): ?array
     {
-        try {
-            $data = $client->readDesktopMonitoring();
-            if (UgosTelemetry::number($data['cpu_usage_rate'] ?? null, 0, 100) === null
-                && UgosTelemetry::number($data['ram_usage_rate'] ?? null, 0, 100) === null
-                && UgosTelemetry::desktopLanRates($data) === [null, null]) {
-                throw new UgosApiException('Keine auswertbaren Messwerte.');
-            }
-            return $data;
-        } catch (UgosApiException $e) {
-            $warnings[] = 'Desktop-Monitoring: ' . $e->getMessage();
+        if (!$this->ReadPropertyBoolean('Enabled')) {
             return null;
         }
-    }
-
-    private function readMissingMemoryStatistics(UgosClient $client, mixed $details, array &$warnings): array
-    {
-        $missing = array_filter(['free', 'cache'], static fn (string $key): bool => UgosTelemetry::number($details[$key] ?? null) === null);
-        if ($missing === []) {
-            return [];
-        }
         try {
-            $data = $client->readMemoryStatistics();
-            $details = $data['structure'] ?? $data['mem']['structure'] ?? $data;
-            $memory = [];
-            foreach ($missing as $key) {
-                $value = UgosTelemetry::number($details[$key] ?? null);
-                if ($value !== null) {
-                    $memory[$key] = $value;
-                }
-            }
-            if ($memory === []) {
-                $warnings[] = 'Separate RAM-Abfrage: keine auswertbaren Werte für freien RAM oder Cache.';
-            }
-            return $memory;
-        } catch (UgosApiException $e) {
-            $warnings[] = 'Separate RAM-Abfrage: ' . $e->getMessage();
-            return [];
-        }
-    }
-
-    private function completeResourceOverview(UgosClient $client, ?array $stats, array &$warnings): ?array
-    {
-        $overview = is_array($stats['overview'] ?? null) ? $stats['overview'] : ($stats ?? []);
-        if (UgosTelemetry::number($overview['cpu'][0]['used_percent'] ?? null, 0, 100) !== null
-            && UgosTelemetry::number($overview['mem'][0]['used_percent'] ?? null, 0, 100) !== null
-            && UgosTelemetry::number($overview['cpu'][0]['temp'] ?? null, -20, 130) !== null) {
-            return $stats;
-        }
-        $fallback = $this->readSection($client, '/ugreen/v1/taskmgr/stat/overview', 'Ressourcenübersicht', $warnings,
-            static fn (array $data): bool => is_array($data['cpu'] ?? null) || is_array($data['mem'] ?? null));
-        if ($fallback === null) {
-            return $stats;
-        }
-        // Detaildaten aus get_all behalten und nur fehlende Werte aus der Übersicht ergänzen.
-        $result = array_replace($fallback, $overview);
-        foreach ([['cpu', 'used_percent', 0, 100], ['cpu', 'temp', -20, 130], ['mem', 'used_percent', 0, 100]] as [$key, $field, $min, $max]) {
-            $value = UgosTelemetry::number($fallback[$key][0][$field] ?? null, $min, $max);
-            if ($value !== null && UgosTelemetry::number($result[$key][0][$field] ?? null, $min, $max) === null) {
-                $entry = $result[$key][0] ?? null;
-                $result[$key] = is_array($result[$key] ?? null) ? $result[$key] : [];
-                $result[$key][0] = is_array($entry) ? $entry : [];
-                $result[$key][0][$field] = $value;
-            }
-        }
-        $stats['overview'] = $result;
-        return $stats;
-    }
-
-    private function readSection(UgosClient $client, string $path, string $label, array &$warnings, callable $valid,
-        ?bool &$timedOut = null, ?int $timeoutMs = null): ?array
-    {
-        $timedOut = false;
-        try {
-            $data = $client->read($path, $timeoutMs);
+            $data = $client->read($path);
             if (!$valid($data)) {
                 throw new UgosApiException('Unbekanntes Datenformat.');
             }
@@ -438,7 +343,6 @@ class UgreenNAS extends IPSModuleStrict
             if (!$client->hasSession() || in_array($e->getCode(), [1003, 401, 1024], true)) {
                 throw new UgosApiException($message, $e->getCode(), $e);
             }
-            $timedOut = $e->getCode() === CURLE_OPERATION_TIMEDOUT;
             $warnings[] = $message;
             return null;
         }
@@ -469,7 +373,7 @@ class UgreenNAS extends IPSModuleStrict
 
     private function catalog(): array
     {
-        $base = UgosTelemetry::normalize([], [], null, null)['metrics'];
+        $base = UgosTelemetry::normalize([], null, null)['metrics'];
         return array_replace($base, json_decode($this->ReadAttributeString('Catalog'), true) ?: [], $this->snapshot()['metrics'] ?? []);
     }
 
@@ -531,7 +435,7 @@ class UgreenNAS extends IPSModuleStrict
         $object = IPS_GetObject($variableId);
         $id = $object['ObjectIdent'];
         $metric = $catalog[$id] ?? null;
-        if ($metric === null && preg_match('/^(?:Fan_(?:cpu_fan|device_fan)_\d+|(?:Pool|Disk|Volume)_[a-f0-9]{16}_(?:Used|Status|Temperature|PowerOnHours|Available))$/D', $id)) {
+        if ($metric === null && preg_match('/^(?:Fan_(?:cpu_fan|device_fan|desktop)_\d+|(?:Pool|Disk|Volume)_[a-f0-9]{16}_(?:Used|Status|Temperature|PowerOnHours|Available))$/D', $id)) {
             // Die Variable kann nach einem Datenquellenwechsel noch vorhanden sein.
             [$type, $unit] = match (true) {
                 str_starts_with($id, 'Fan_') => [1, 'rpm'],
